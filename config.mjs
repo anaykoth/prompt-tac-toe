@@ -2,9 +2,10 @@
 // .env.local for dev). This file is committed and holds no secrets.
 export const config = {
   databaseUrl: process.env.TTT_DATABASE_URL,
+  // Display names are not secrets — edit here and push; auto-deploy ships it.
   players: {
-    X: { name: process.env.TTT_NAME_X ?? "Anay", token: process.env.TTT_TOKEN_X },
-    O: { name: process.env.TTT_NAME_O ?? "Jake", token: process.env.TTT_TOKEN_O },
+    X: { name: "Anay", token: process.env.TTT_TOKEN_X },
+    O: { name: "Jake", token: process.env.TTT_TOKEN_O },
   },
   // Max banked moves per player — stops a prompt backlog from turning into a
   // 20-minute play session.
