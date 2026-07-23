@@ -4,53 +4,48 @@ Daily ultimate tic-tac-toe where moves are earned by making Claude Code
 prompts. One game per day; every real prompt banks a move credit (capped so a
 backlog can't turn into a marathon session).
 
+Live at **https://prompt-tac-toe.vercel.app**
+
 ## How it works
 
-- Each player's Claude Code has a `UserPromptSubmit` hook that pings the game
-  API with their player token on every prompt, banking one move credit
-  (default cap: 3 banked at a time).
+- Each player's Claude Code has a `UserPromptSubmit` hook that pings
+  `POST /api/prompt` with their player token on every prompt, banking one move
+  credit (default cap: 3 banked at a time).
 - Turns strictly alternate. On your turn you spend one credit to place a move
-  on the board web page. No credits = you have to go prompt Claude.
+  on the board. No credits = you have to go prompt Claude.
 - Standard ultimate tic-tac-toe rules: the cell you pick sends your opponent
   to that small board; win three small boards in a row to win. If you're sent
   to a decided board, you play anywhere.
 - A new game starts each day (America/New_York). If nobody has won by
   midnight, whoever holds more small boards takes the day; ties are draws.
-  Yesterday's loser starts today's game. Daily results accumulate a tally.
+  Yesterday's loser starts. Daily results accumulate a tally.
 
-## Pieces
+## Stack
 
-| Piece | Where |
+Single Next.js app (board page + `/api/prompt`, `/api/state`, `/api/move`
+route handlers) deployed on Vercel via the GitHub integration — every push to
+`main` auto-deploys. State lives in a dedicated Supabase Postgres (free tier),
+reached through the Supavisor pooler (the direct `db.*` host is IPv6-only,
+which Vercel cannot reach). The pure rules engine is `lib/engine.mjs`.
+
+All secrets are Vercel env vars (none in this repo):
+
+| Var | Meaning |
 | --- | --- |
-| Game API + rules engine | Supabase Edge Function `prompt-tac-toe` on the diyona-crm project (`iibtglstfscurtiqpeuc`), source in `supabase/functions/prompt-tac-toe/` |
-| State | `ttt_games` + `ttt_results` tables, same project (RLS-locked; service role only) |
-| Board UI | `ui/index.html`, deployed to GitHub Pages: https://anaykoth.github.io/prompt-tac-toe/ (public repo `anaykoth/prompt-tac-toe` holds only this page) |
-| Prompt hook | `install-hook.sh` adds the `UserPromptSubmit` hook to `~/.claude/settings.json` |
-
-The API base URL is
-`https://iibtglstfscurtiqpeuc.supabase.co/functions/v1/prompt-tac-toe`
-(GET on it redirects to the board). Endpoints: `POST /api/prompt` (hook),
-`GET /api/state`, `POST /api/move` — all token-gated for anything that
-identifies or mutates.
+| `TTT_DATABASE_URL` | Supabase pooler connection string |
+| `TTT_TOKEN_X` / `TTT_TOKEN_O` | Player tokens (gate who plays as X / O) |
+| `TTT_NAME_X` / `TTT_NAME_O` | Display names |
+| `TTT_CREDIT_CAP` | Optional, default 3 |
 
 ## Player setup
 
 1. Open your player link once (saves your token in the browser):
-   `https://anaykoth.github.io/prompt-tac-toe/?t=<your-token>`
+   `https://prompt-tac-toe.vercel.app/?t=<your-token>`
 2. Run `./install-hook.sh <your-token>` (needs `python3` + `curl`), then
    restart open Claude Code sessions.
 
-Player tokens live in the deployed function config (`config.ts` has the
-defaults; function secrets `TTT_TOKEN_X` / `TTT_TOKEN_O` / `TTT_NAME_O` /
-`TTT_CREDIT_CAP` override without a code change). Tokens only gate this game —
-worst case someone plays a move as you.
+## Dev
 
-## Dev notes
-
-- `npm test` runs the pure rules-engine tests (`test-engine.mjs`) — no deps.
-- Redeploy the function via the Supabase MCP `deploy_edge_function` (or
-  `supabase functions deploy prompt-tac-toe --no-verify-jwt`).
-- The UI deploys by pushing `ui/index.html` to the `anaykoth/prompt-tac-toe`
-  GitHub repo (Pages serves from main).
-- Supabase's gateway rewrites any HTML response from functions/storage to
-  `text/plain` + sandbox CSP — that's why the UI lives on GitHub Pages.
+- `npm test` — rules-engine tests (plain node, no DB needed).
+- `npm run dev` — local dev server; copy `.env.local` values from Vercel.
+- `npm run migrate` — applies `supabase/migrations/0001_ttt_tables.sql`.

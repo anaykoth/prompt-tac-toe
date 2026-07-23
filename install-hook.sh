@@ -4,7 +4,7 @@
 set -euo pipefail
 
 TOKEN="${1:?usage: install-hook.sh <player-token>}"
-APP_URL="https://iibtglstfscurtiqpeuc.supabase.co/functions/v1/prompt-tac-toe"
+APP_URL="https://prompt-tac-toe.vercel.app"
 SETTINGS="$HOME/.claude/settings.json"
 
 mkdir -p "$HOME/.claude"
