@@ -4,7 +4,7 @@ export const config = {
   databaseUrl: process.env.TTT_DATABASE_URL,
   players: {
     X: { name: process.env.TTT_NAME_X ?? "Anay", token: process.env.TTT_TOKEN_X },
-    O: { name: process.env.TTT_NAME_O ?? "Friend", token: process.env.TTT_TOKEN_O },
+    O: { name: process.env.TTT_NAME_O ?? "Jake", token: process.env.TTT_TOKEN_O },
   },
   // Max banked moves per player — stops a prompt backlog from turning into a
   // 20-minute play session.
