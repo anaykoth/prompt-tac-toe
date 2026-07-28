@@ -20,6 +20,20 @@ Live at **https://prompt-tac-toe.vercel.app**
   midnight, whoever holds more small boards takes the day; ties are draws.
   Yesterday's loser starts. Daily results accumulate a tally.
 
+## Also in here: Splinter Alley
+
+`/darts` is a second game sharing this deployment — 3D darts against a crowd of
+unwell puppets. See [games/darts/README.md](games/darts/README.md).
+
+It is a self-contained static Vite build (three.js, no assets, no backend) that
+compiles into `public/darts/` as part of `npm run build`. It shares no code,
+routes, database or env vars with tic-tac-toe; the only touch points are the
+workspace entry in `package.json`, one rewrite in `next.config.mjs`, and the
+gitignored build output. `npm test` still runs only the tic-tac-toe engine
+tests — the darts suites are `npm run test:darts`.
+
+Currently hot-seat or versus CPU. Real-time head-to-head is not wired up yet.
+
 ## Stack
 
 Single Next.js app (board page + `/api/prompt`, `/api/state`, `/api/move`

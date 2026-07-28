@@ -4,15 +4,21 @@
   "version": "2.0.0",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "npm run build --workspace=splinter-alley && next build",
     "start": "next start",
     "test": "node test-engine.mjs",
-    "migrate": "node --env-file=.env.local scripts/migrate.mjs"
+    "migrate": "node --env-file=.env.local scripts/migrate.mjs",
+    "build:darts": "npm run build --workspace=splinter-alley",
+    "dev:darts": "npm run dev --workspace=splinter-alley",
+    "test:darts": "npm run test --workspace=splinter-alley"
   },
   "dependencies": {
     "next": "^15.3.4",
     "pg": "^8.16.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
-  }
+  },
+  "workspaces": [
+    "games/darts"
+  ]
 }
