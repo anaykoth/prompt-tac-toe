@@ -40,12 +40,15 @@ export default function Home() {
 
   const popOut = async () => {
     try {
-      const pip = await window.documentPictureInPicture.requestWindow({ width: 380, height: 540 });
+      const pip = await window.documentPictureInPicture.requestWindow({ width: 380, height: 500 });
       pip.document.title = "Prompt-Tac-Toe";
-      pip.document.body.style.margin = "0";
+      pip.document.documentElement.style.height = "100%";
+      pip.document.body.style.cssText = "margin:0;height:100%;overflow:hidden;";
       const f = pip.document.createElement("iframe");
       f.src = "/?compact=1";
-      f.style.cssText = "border:0;width:100%;height:100%;display:block;";
+      // Fixed inset sizing tracks window resizes regardless of body height
+      // quirks in the pip document.
+      f.style.cssText = "position:fixed;inset:0;width:100%;height:100%;border:0;";
       pip.document.body.appendChild(f);
     } catch {
       showFlash("Couldn't open picture-in-picture.");

@@ -54,25 +54,34 @@ body {
 
 .wrap.compact {
   max-width: none;
-  padding: 8px 10px 14px;
+  padding: 6px 10px 10px;
 }
 
-.compact .title {
-  font-size: 1rem;
+/* The pip titlebar already names the app - drop the header row entirely. */
+.compact .top {
+  display: none;
 }
 
 .compact .scoreboard {
-  margin: 6px 0 2px;
+  margin: 2px 0;
   font-size: 0.9rem;
 }
 
 .compact .status {
-  margin: 6px 0;
+  margin: 4px 0;
   font-size: 0.85rem;
+  min-height: 0;
+}
+
+/* Square board sized to whatever height is left after the scoreboard,
+   status and credit rows - the pip window never needs to scroll. */
+.compact .big {
+  width: min(100%, calc(100dvh - 130px));
+  margin: 0 auto;
 }
 
 .compact .credits {
-  margin-top: 10px;
+  margin-top: 8px;
 }
 
 .title {
