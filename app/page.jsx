@@ -175,11 +175,17 @@ export default function Home() {
       </header>
 
       <div className="scoreboard">
-        <span className="pname x">{names.X}</span>
+        <span className="pside">
+          <span className="dots">{creditDots("X")}</span>
+          <span className="pname x">{names.X}</span>
+        </span>
         <span className="score">
           {tally.X} · {tally.D} · {tally.O}
         </span>
-        <span className="pname o">{names.O}</span>
+        <span className="pside">
+          <span className="pname o">{names.O}</span>
+          <span className="dots">{creditDots("O")}</span>
+        </span>
       </div>
 
       <p className={`status ${statusTone}`}>{status}</p>
@@ -213,18 +219,6 @@ export default function Home() {
             </div>
           );
         })}
-      </div>
-
-      <div className="credits">
-        <div className="creditbox">
-          <span className="pname x">{names.X}</span>
-          <span className="dots">{creditDots("X")}</span>
-        </div>
-        <span className="muted small">banked moves</span>
-        <div className="creditbox">
-          <span className="dots">{creditDots("O")}</span>
-          <span className="pname o">{names.O}</span>
-        </div>
       </div>
 
       {!compact && (

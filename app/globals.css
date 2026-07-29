@@ -73,15 +73,11 @@ body {
   min-height: 0;
 }
 
-/* Square board sized to whatever height is left after the scoreboard,
-   status and credit rows - the pip window never needs to scroll. */
+/* Square board sized to whatever height is left after the scoreboard and
+   status rows - the pip window never needs to scroll. */
 .compact .big {
-  width: min(100%, calc(100dvh - 130px));
+  width: min(100%, calc(100dvh - 92px));
   margin: 0 auto;
-}
-
-.compact .credits {
-  margin-top: 8px;
 }
 
 .title {
@@ -240,17 +236,10 @@ body {
   color: #9a9aa2;
 }
 
-.credits {
-  display: flex;
+.pside {
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  margin-top: 16px;
-}
-
-.creditbox {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  gap: 7px;
 }
 
 .dots {
