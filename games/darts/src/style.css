@@ -382,3 +382,27 @@ body.walking #stage { cursor: none; }
 /* the maker owns the screen: no scoreboard, no bar tab */
 body.makermode #hud, body.makermode #bar, body.makermode #reticle,
 body.makermode #power, body.makermode #nameplate { opacity: 0; pointer-events: none; }
+
+/* ---------- online presence ---------- */
+#presence {
+  position: fixed; top: 14px; left: 14px; z-index: 24;
+  display: flex; align-items: center; gap: 8px;
+  background: var(--panel); border: 1px solid var(--edge); border-radius: 20px;
+  padding: 6px 14px 6px 10px; backdrop-filter: blur(14px);
+  font-family: var(--mono); font-size: 11px; letter-spacing: .12em;
+  opacity: 0; transition: opacity .3s ease; pointer-events: none;
+}
+#presence.on { opacity: 1; }
+.pr-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--dim);
+  box-shadow: 0 0 0 0 rgba(79,214,127,.6);
+}
+#presence.here .pr-dot { background: var(--green); animation: pulse 2.2s ease-out infinite; }
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(79,214,127,.55); }
+  70% { box-shadow: 0 0 0 7px rgba(79,214,127,0); }
+  100% { box-shadow: 0 0 0 0 rgba(79,214,127,0); }
+}
+.pr-name { color: var(--ink); font-weight: 700; letter-spacing: .18em; }
+.pr-state { color: var(--dim); }
+#presence.here .pr-state { color: var(--gold); }

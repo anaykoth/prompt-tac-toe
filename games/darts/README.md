@@ -251,15 +251,44 @@ gives you `probe.step()`, `probe.cam()`, `probe.plant()`, `probe.style()` and
 `probe.hype()` — it drives the loop manually, which matters because background
 tabs throttle `requestAnimationFrame` to about 1 fps.
 
-## Taking it online
+## Online play
 
-It's a static bundle, so hosting is just `npm run build` and upload.
+Pick **Online — vs the other seat** in settings. Identity reuses the
+tic-tac-toe player tokens: open `/darts?t=<your-token>` once and it sticks.
+Seat 0 is X, seat 1 is O — the same two people.
 
-Real-time 2-player is not wired up. The pieces are in place for it: `Match`
-holds the entire authoritative game state and is plain serialisable data, all
-scoring flows through `Match.applyDart()`, and a throw is fully described by
-the small `{ target, power01, lateralPx, straight }` object that
-`ThrowControl` emits. A server would exchange those throw descriptors and run
-`Match` authoritatively; the physics is deterministic apart from the
-deliberate `Math.random()` calls in bounce-out and error rolls, which would
-need seeding.
+A throw on the wire is the *launch*, not the outcome:
+
+```json
+{ "from": [0.15,1.55,2.16], "vel": [0.1,0.9,-8.1],
+  "wobble": 0.06, "roll": 2.5, "magnus": 0, "seed": 3072891 }
+```
+
+Both browsers and the server run that through the identical simulation, so you
+watch the same dart hit the same wire and bounce out the same way. The payload
+cannot express a score, so the server derives one by re-flying the dart in
+`replay.js` — the same module the client watches.
+
+> Every random draw that can change where a dart ends up comes from
+> `game/rng.js`, seeded per throw. Crowd, arena and audio randomness
+> deliberately still uses `Math.random()`; those may differ between screens.
+> `test/netcheck.mjs` flies 200 throws down both paths and asserts they score
+> identically, at varying frame rates.
+
+**Transport is polling, on purpose.** 3.5s idle, 650ms while you are waiting on
+their dart. Darts is turn-based and this deployment reaches Postgres through a
+transaction-mode pooler (no `LISTEN/NOTIFY`) with RLS shut to the anon key, so
+both obvious push routes would mean new infrastructure or reopening a door
+someone deliberately closed. The append-only throw log is the source of truth,
+so swapping in SSE later touches nothing above `net/online.js`.
+
+Remote darts are replayed for the spectacle but never scored locally — the
+server already counted them, and doing both double-counts every dart.
+
+Reload mid-leg and the client replays the whole log to rebuild the board.
+
+## Taking it further
+
+Not done yet: legs and sets, a match history, and spectators. The throw log
+supports all three — a third connection could replay it read-only without any
+server change.

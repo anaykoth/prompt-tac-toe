@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { integrate, sweep, SUBSTEP, FORWARD } from './physics.js';
+import { mulberry32, newSeed } from './rng.js';
 
 const _v = new THREE.Vector3();
 const _q = new THREE.Quaternion();
@@ -100,6 +101,9 @@ export class Dart {
     this.roll = 0; this.rollRate = 0; this.magnus = 0;
     this.stuckT = 0;
     this.settleT = 0;
+    this.seed = 0;
+    this.rng = mulberry32(1);
+    this.deflects = 0;
 
     /* motion trail */
     const N = 26;
@@ -129,7 +133,13 @@ export class Dart {
 
   hide() { this.mesh.visible = false; this.trail.visible = false; }
 
+  /**
+   * @param {object} opts  wobble/roll/magnus, plus `seed` — pass the same seed
+   *   and the same pos/vel and the flight is bit-identical anywhere it runs.
+   */
   launch(pos, vel, opts = {}) {
+    this.seed = opts.seed ?? newSeed();
+    this.rng = mulberry32(this.seed);
     this.pos.copy(pos);
     this.prev.copy(pos);
     this.vel.copy(vel);
@@ -138,17 +148,18 @@ export class Dart {
     this.result = null;
     this.state = 'flight';
     this.wobAmp = opts.wobble ?? 0.05;
-    this.wobFreq = 26 + Math.random() * 14;
-    this.wobPhase = Math.random() * 6.28;
-    this.rollRate = opts.roll ?? (Math.random() - 0.5) * 9;
+    this.wobFreq = 26 + this.rng() * 14;
+    this.wobPhase = this.rng() * 6.28;
+    this.rollRate = opts.roll ?? (this.rng() - 0.5) * 9;
     this.roll = 0;
     this.magnus = opts.magnus ?? 0;
     this.bounced = false;
+    this.deflects = 0;
 
     _v.copy(vel).normalize();
     this.quat.setFromUnitVectors(FORWARD, _v);
     // a scruffy release starts the nose off-axis
-    _e.set((Math.random() - 0.5) * this.wobAmp * 4, (Math.random() - 0.5) * this.wobAmp * 4, 0);
+    _e.set((this.rng() - 0.5) * this.wobAmp * 4, (this.rng() - 0.5) * this.wobAmp * 4, 0);
     this.quat.multiply(_q.setFromEuler(_e));
 
     this.mesh.visible = true;
@@ -246,21 +257,25 @@ export class Dart {
         const n = new THREE.Vector3(0, 0, 1);
         const rest = hit.wire ? 0.42 : 0.3;
         this.vel.reflect(n).multiplyScalar(rest);
-        this.vel.x += (Math.random() - 0.5) * 1.4;
-        this.vel.y += (Math.random() - 0.5) * 1.2 + 0.5;
-        this.rollRate = (Math.random() - 0.5) * 30;
+        this.vel.x += (this.rng() - 0.5) * 1.4;
+        this.vel.y += (this.rng() - 0.5) * 1.2 + 0.5;
+        this.rollRate = (this.rng() - 0.5) * 30;
         this.wobAmp = 0.4; this.age = 0;
         return { type: 'bounceout', surface: hit.surface, wire: hit.wire, point: hit.point.clone(), speed: hit.speed };
       }
       case 'deflect': {
         this.bounced = true;
-        this.pos.copy(hit.point);
-        const n = _v.copy(this.pos).sub(hit.other.tip).normalize();
-        if (n.lengthSq() < 1e-6) n.set(0, 1, 0);
+        const n = _v.copy(hit.point).sub(hit.other.tip);
+        if (n.lengthSq() < 1e-9) n.set(0, 1, 0);
+        n.normalize();
+        // place it clear of the other dart's radius, not on the contact point,
+        // or the next substep finds the same collision again
+        this.pos.copy(hit.other.tip).addScaledVector(n, 0.015);
         this.vel.reflect(n).multiplyScalar(0.34);
         this.vel.y += 0.6;
-        this.rollRate = (Math.random() - 0.5) * 26;
+        this.rollRate = (this.rng() - 0.5) * 26;
         this.wobAmp = 0.5; this.age = 0;
+        this.deflects++;
         return { type: 'clatter', point: hit.point.clone(), speed: hit.speed };
       }
       case 'ground': {
@@ -271,7 +286,7 @@ export class Dart {
           // lie down and stop
           this.state = 'dead';
           this.vel.set(0, 0, 0);
-          const dir = new THREE.Vector3(Math.random() - 0.5, 0, Math.random() - 0.5).normalize();
+          const dir = new THREE.Vector3(this.rng() - 0.5, 0, this.rng() - 0.5).normalize();
           this.quat.setFromUnitVectors(FORWARD, dir);
           this.pos.y = hit.groundY + 0.004;
           this._syncMesh();
@@ -279,7 +294,7 @@ export class Dart {
         }
         this.vel.y = Math.abs(this.vel.y) * 0.26;
         this.vel.x *= 0.62; this.vel.z *= 0.62;
-        this.rollRate = (Math.random() - 0.5) * 20;
+        this.rollRate = (this.rng() - 0.5) * 20;
         this.wobAmp = 0.35; this.age = Math.max(0, this.age - 0.2);
         return null;
       }

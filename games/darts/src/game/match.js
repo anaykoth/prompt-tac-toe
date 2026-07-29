@@ -164,6 +164,36 @@ export class Match {
     return { scored, label, bust, win, visitOver, total, player: p, remaining: this.score[p] };
   }
 
+  /** Everything a peer or the server needs to hold the same game. */
+  toJSON() {
+    return {
+      start: this.start, doubleOut: this.doubleOut,
+      score: [...this.score], visitStart: [...this.visitStart],
+      dartsThrown: [...this.dartsThrown], totalScored: [...this.totalScored],
+      current: this.current, dartsLeft: this.dartsLeft, visit: [...this.visit],
+      round: this.round, finished: this.finished, winner: this.winner,
+      history: this.history,
+    };
+  }
+
+  static fromJSON(o) {
+    const m = new Match({ start: o.start, doubleOut: o.doubleOut });
+    Object.assign(m, {
+      score: [...o.score], visitStart: [...o.visitStart],
+      dartsThrown: [...o.dartsThrown], totalScored: [...o.totalScored],
+      current: o.current, dartsLeft: o.dartsLeft, visit: [...o.visit],
+      round: o.round, finished: o.finished, winner: o.winner,
+      history: o.history ?? [],
+    });
+    return m;
+  }
+
+  /** Adopt another match's state without breaking object identity. */
+  adopt(o) {
+    Object.assign(this, Match.fromJSON(o));
+    return this;
+  }
+
   /** Hand the darts over. */
   endVisit() {
     if (this.finished) return;

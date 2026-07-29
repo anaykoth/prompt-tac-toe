@@ -96,6 +96,7 @@
         <label class="row"><span>Double out</span><input type="checkbox" id="opt-doubleout" checked /></label>
         <label class="row"><span>Opponent</span>
           <select id="opt-opponent">
+            <option value="online">Online — vs the other seat</option>
             <option value="hotseat">Hot-seat (2P)</option>
             <option value="ai-pub">CPU — Pub regular</option>
             <option value="ai-shark" selected>CPU — Shark</option>
@@ -128,6 +129,9 @@
         </div>
       </div>
     </div>
+
+    <!-- online presence -->
+    <div id="presence"><span class="pr-dot"></span><span class="pr-name"></span><span class="pr-state"></span></div>
 
     <!-- opponent nameplate -->
     <div id="nameplate"><span class="np-name"></span><span class="np-sub"></span></div>

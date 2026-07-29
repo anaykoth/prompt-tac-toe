@@ -32,7 +32,16 @@ workspace entry in `package.json`, one rewrite in `next.config.mjs`, and the
 gitignored build output. `npm test` still runs only the tic-tac-toe engine
 tests — the darts suites are `npm run test:darts`.
 
-Currently hot-seat or versus CPU. Real-time head-to-head is not wired up yet.
+Head-to-head works: pick **Online** in settings and it reuses your
+tic-tac-toe player token, so seat X is Anay and seat O is Jake. It adds
+`/api/darts/*` and three `darts_*` tables alongside the tic-tac-toe ones, and
+shares the same database. It does not touch the tic-tac-toe tables, routes or
+engine.
+
+**Run `npm run migrate` once** to create the darts tables — the migration
+script now applies every file in `supabase/migrations/` in order and is safe to
+re-run. Until then the online option fails gracefully back to the CPU; offline
+darts and tic-tac-toe are unaffected either way.
 
 ## Stack
 

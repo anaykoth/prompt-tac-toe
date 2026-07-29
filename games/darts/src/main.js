@@ -13,6 +13,9 @@ import { Match, AI_LEVELS, aiAim } from './game/match.js';
 import { Hud, dartReaction, visitReaction } from './game/hud.js';
 import { Bar, DRINKS } from './game/bar.js';
 import { Walk } from './game/walk.js';
+import { OnlineSession, readToken } from './net/online.js';
+import { launchMessage, readLaunch } from './game/replay.js';
+import { newSeed } from './game/rng.js';
 import { Cast, CHARACTERS, opponentSpec } from './game/cast.js';
 import { Maker, loadSpec } from './game/maker.js';
 import { RELEASE_AT, defaultSpec } from './world/puppet.js';
@@ -151,7 +154,25 @@ class Game {
   }
 
   _opponentName() {
+    if (this.isOnline) {
+      const them = this.net.seats?.find((s) => s.seat === this.theirSeat);
+      return (them?.name || 'THE OTHER ONE').toUpperCase();
+    }
     return this.ai ? CHARACTERS[this.ai].name : (this.cast.get(1)?.spec.name ?? 'PLAYER TWO');
+  }
+
+  /* ---------------- seats ---------------- */
+
+  /** Which seat the local player is. Always 0 offline; the server decides online. */
+  get mySeat() { return this.net?.seat ?? 0; }
+  get theirSeat() { return 1 - this.mySeat; }
+  get isOnline() { return !!(this.net && this.net.connected); }
+  /** True when the local player may pick up a dart. */
+  _myTurn() { return this.match.current === this.mySeat; }
+  /** True when the seat throwing right now is driven by something other than this mouse. */
+  _remoteTurn() {
+    if (this.isOnline) return !this._myTurn();
+    return !!this.ai && this.match.current === 1;
   }
 
   _makeCrowd(n) {
@@ -213,7 +234,7 @@ class Game {
 
   /** Whichever view is the resting state right now. */
   _baseCamMode() {
-    return (this.ai && this.match?.current === 1) ? 'opponent' : 'throw';
+    return (this.match && this._remoteTurn()) ? 'opponent' : 'throw';
   }
 
   /** Cut straight back to whatever the resting view is. */
@@ -228,7 +249,7 @@ class Game {
    * spot, so it can't clip the other player or the pit crowd.
    */
   _applyOpponentCam() {
-    const m = this.cast.members[1];
+    const m = this.cast.members[this.theirSeat];
     const p = m ? m.pos : new THREE.Vector3(0.16, this.arena.stageH, OCHE_DIST + 0.22);
     // front quarter, between thrower and board: you see the face and the arm
     // come through, and the dart flies past camera on its way out
@@ -373,11 +394,107 @@ class Game {
     this.arena.lights.hemi.intensity = (s.lights?.hemi ?? 1) * this.lightBase.hemi;
   }
 
+  /* ---------------- online ---------------- */
+
+  _theirState() {
+    const d = this.theirDrunk ?? 0;
+    if (d < 0.05) return 'sober';
+    if (d < 0.22) return 'loose';
+    if (d < 0.45) return 'merry';
+    if (d < 0.70) return 'wobbly';
+    if (d < 0.90) return 'gone';
+    return 'horizontal';
+  }
+
+  async _goOnline() {
+    const token = readToken();
+    if (!token) {
+      this.hud.toast('NO TOKEN', 'OPEN YOUR PLAYER LINK FIRST', 'var(--hot)');
+      this._setOpponentSelect('ai-shark');
+      return;
+    }
+    this.net = new OnlineSession({
+      token,
+      onState: (s) => this._onNetState(s),
+      onThrow: (t, o) => this._onNetThrow(t, o),
+      onError: (e) => this._onNetError(e),
+    });
+    this.hud.toast('CONNECTING', 'FINDING THE OTHER ONE', 'var(--dim)');
+    const r = await this.net.join(this.mySpec);
+    if (!r) { this.net = null; this._setOpponentSelect('ai-shark'); return; }
+
+    this.ai = null;
+    this.cast.stanceSeat = r.seat;
+    this.cast.set(r.seat, this.mySpec);
+    this.hud.toast('CONNECTED', `YOU ARE ${r.name}`, 'var(--green)');
+    this._syncNames();
+  }
+
+  _goOffline() {
+    this.net?.stop();
+    this.net = null;
+    this.theirDrunk = 0;
+    this.cast.stanceSeat = 0;
+    this.cast.set(0, this.mySpec);
+  }
+
+  _setOpponentSelect(v) {
+    this.opts.opponent = v;
+    const el = $('#opt-opponent');
+    if (el) el.value = v;
+    this._applyOpponent();
+  }
+
+  _syncNames() {
+    const seats = this.net?.seats ?? [];
+    const mine = seats.find((s) => s.seat === this.mySeat);
+    const theirs = seats.find((s) => s.seat === this.theirSeat);
+    this.hud.setNames(
+      (mine?.name || this.mySpec.name || 'YOU').toUpperCase(),
+      (theirs?.name || 'WAITING…').toUpperCase(),
+      { swap: this.mySeat === 1 },
+    );
+  }
+
+  /** Server state arrived: adopt it, and rebuild if we are behind. */
+  _onNetState({ match, seats, replayAll }) {
+    if (!match) return;
+    const them = seats?.find((s) => s.seat === this.theirSeat);
+    if (them) {
+      this.theirDrunk = them.drunk ?? 0;
+      if (them.spec && them.spec.name !== this.cast.get(this.theirSeat)?.spec.name) {
+        this.cast.set(this.theirSeat, them.spec);
+      }
+      this.hud.presence(them.online, (them.name || '').toUpperCase(), this._theirState());
+    }
+    this._syncNames();
+
+    const turnWas = this.match.current;
+    // never yank state out from under a dart of our own that is still resolving
+    const mine = this.flying && !this.flying.remote;
+    if (mine || (this.phase === 'flight' && this._myTurn())) return;
+    this.match.adopt(match);
+    this.hud.sync(this.match);
+    if (replayAll || this.match.current !== turnWas) this._beginVisit();
+  }
+
+  _onNetThrow(t) {
+    if (t.seat === this.mySeat) return;      // already flew locally
+    this._remoteThrow(t.seat, t.launch);
+  }
+
+  _onNetError(e) {
+    if (e === 'not-your-turn' || e === 'conflict') return;   // the poll will fix it
+    this.hud.toast('OFFLINE', String(e).toUpperCase().replace(/-/g, ' '), 'var(--hot)');
+  }
+
   _applyOpponent() {
     const o = this.opts.opponent;
+    if (o === 'online') { this._goOnline(); return; }
+    if (this.net) this._goOffline();
     this.ai = o === 'hotseat' ? null : o;
     this.cast.set(1, opponentSpec(this.ai));
-    this.hud.setNames(this.mySpec?.name || 'YOU', this._opponentName());
+    this.hud.setNames((this.mySpec?.name || 'YOU').toUpperCase(), this._opponentName());
   }
 
   /* -------------------------------------------------------------- */
@@ -397,6 +514,11 @@ class Game {
   }
 
   _restart() {
+    if (this.isOnline) {
+      // the leg belongs to both of you; ask the server for a new one
+      this.net.join(this.mySpec, { newLeg: true });
+      return;
+    }
     this.timers.length = 0;
     this.tweens.length = 0;
     this._clearDarts(true);
@@ -423,12 +545,19 @@ class Game {
     this.cast.setActive(p);
     this.hud.sync(this.match);
 
-    if (this.ai && p === 1) {
+    if (this._remoteTurn()) {
       this.phase = 'ai';
       this._throwCam();
-      this.hud.nameplate(this._opponentName(), `avg ${(this.match.average(1) ?? 0).toFixed(1)} · ${this.match.score[1]}`);
+      const them = this.theirSeat;
+      this.hud.nameplate(
+        this._opponentName(),
+        this.isOnline
+          ? `${this.match.score[them]} left · ${this._theirState()}`
+          : `avg ${(this.match.average(them) ?? 0).toFixed(1)} · ${this.match.score[them]}`,
+      );
       this._syncThrowAvailability();
-      this._after(1.35, () => this._aiThrow());     // let them walk up first
+      // online, their dart arrives over the wire; offline the CPU throws it
+      if (!this.isOnline) this._after(1.35, () => this._aiThrow());
     } else {
       this.phase = 'aim';
       this._throwCam();
@@ -491,15 +620,43 @@ class Game {
       vel.y = speed * 0.28;
     }
 
-    const dart = this._spawnDart(ACCENT[this.match.current]);
-    dart.launch(from, vel, {
+    // the wire message *is* the launch: same numbers here, on their screen,
+    // and on the server that scores it
+    const msg = launchMessage({
+      from, vel, seed: newSeed(),
       wobble: 0.02 + off * 0.16 + straightErr * 0.13 + this.bar.sway * 0.22,
       roll: -ev.lateralPx * 0.05 + (Math.random() - 0.5) * 6,
       magnus: -ev.lateralPx * 0.0004,
     });
+    this._launchLocal(this.match.current, msg);
+    if (this.isOnline) this.net.submit(msg, this.bar.drunk);
+  }
+
+  /**
+   * Fly a dart from a wire message. Identical path for every source.
+   * `remote` darts are a replay of something that already happened on the
+   * other machine — they are pure spectacle, and must not touch the local
+   * Match, because the server's state (which already counts them) is what
+   * polling adopts. Scoring them here too double-counts every dart.
+   */
+  _launchLocal(seat, msg, remote = false) {
+    const { from, vel, opts } = readLaunch(msg);
+    const dart = this._spawnDart(ACCENT[seat]);
+    dart.remote = remote;
+    dart.launch(from, vel, opts);
     this.flying = dart;
     this.audio.whoosh();
     this.crowd.react(0.06, 0.2);
+    return dart;
+  }
+
+  /** A dart thrown on the other machine: animate their puppet, then fly it. */
+  _remoteThrow(seat, msg) {
+    if (this.phase === 'over') return;
+    this.phase = 'flight';
+    const puppet = this.cast.get(seat);
+    const delay = puppet ? puppet.startThrow(0.9) : 0;
+    this._after(delay, () => this._launchLocal(seat, msg, true));
   }
 
   _aiThrow() {
@@ -525,10 +682,9 @@ class Game {
       vel = ballisticVelocity(from, target, speed + 4) ?? new THREE.Vector3(0, 1, -speed);
     }
 
-    const dart = this._spawnDart(ACCENT[1]);
-    dart.launch(from, vel, { wobble: 0.03 + Math.random() * 0.04 });
-    this.flying = dart;
-    this.audio.whoosh();
+    this._launchLocal(1, launchMessage({
+      from, vel, seed: newSeed(), wobble: 0.03 + Math.random() * 0.04,
+    }));
   }
 
   /* -------------------------------------------------------------- */
@@ -567,17 +723,29 @@ class Game {
     this.audio.roar(r.hype);
     this.hud.toast(r.big, r.small, r.color);
 
+    if (dart.remote) {
+      // spectating: the server already scored this, so just react and wait for
+      // the next poll to bring the authoritative state
+      if (this.opts.boardCam && !this.freeCam) this._boardCam(ev.point, 1.35);
+      this.phase = 'settle';
+      this._after(Math.abs(r.hype) > 0.6 ? 1.25 : 0.9, () => {
+        if (this.phase === 'settle') this.phase = this._remoteTurn() ? 'ai' : 'aim';
+        this._syncThrowAvailability();
+      });
+      return;
+    }
+
     const outcome = this.match.applyDart(res && res.value > 0 ? res : null);
     this.hud.sync(this.match);
 
     // only the human drinks, so only the human earns
-    if (this.opts.bar && outcome.player === 0 && res && res.value > 0) {
+    if (this.opts.bar && outcome.player === this.mySeat && res && res.value > 0) {
       const gained = this.bar.scoreDart(res.value);
       this.hud.points(gained, this.bar.multiplier);
       this._refreshBar();
     }
 
-    const spectating = this.ai && outcome.player === 1;
+    const spectating = outcome.player !== this.mySeat;
     if (this.opts.boardCam && !this.freeCam
         && (Math.abs(r.hype) > 0.5 || outcome.win || spectating)) {
       // you're not at the oche for their darts, so always show you the result
@@ -609,10 +777,10 @@ class Game {
       });
     } else {
       this._throwCam();
-      this.phase = this.ai && this.match.current === 1 ? 'ai' : 'aim';
+      this.phase = this._remoteTurn() ? 'ai' : 'aim';
       this._syncThrowAvailability();
       this._refreshBar();
-      if (this.phase === 'ai') {
+      if (this.phase === 'ai' && !this.isOnline) {
         this._after(0.55 + Math.random() * 0.5, () => this._aiThrow());
       }
     }
@@ -629,7 +797,7 @@ class Game {
     this.audio.roar(1.6);
     this.audio.bell();
     this._crowdCam(999);
-    const name = p === 0 ? 'YOU' : (this.ai ? AI_LEVELS[this.ai].name : 'PLAYER TWO');
+    const name = p === this.mySeat ? 'YOU' : this._opponentName();
     this._after(3.4, () => {
       this.hud.showWin(name, this.match.average(p), () => this._restart(),
         this.opts.bar ? this.bar : null);
@@ -737,7 +905,7 @@ class Game {
 
   /** Throwing is allowed only when it's your turn and you're behind the oche. */
   _syncThrowAvailability() {
-    const yours = this.phase === 'aim' && !(this.ai && this.match.current === 1);
+    const yours = this.phase === 'aim' && !this._remoteTurn();
     const allowed = yours && !this.walk.active && !this.freeCam && this.walk.legal;
     this.control.enabled = allowed;
     this.held.visible = allowed;
@@ -821,6 +989,7 @@ class Game {
     if (this.walk.active) this.hud.walk(true, this.walk.legal);
     // the sobriety meter ticks down live; no need to touch the DOM every frame
     if ((this._barTick = (this._barTick | 0) + 1) % 6 === 0) this._refreshBar();
+    if (this.net) this.net.drunk = this.bar.drunk;
 
     this.control.update(dt);
 
@@ -849,7 +1018,9 @@ class Game {
     this.cast.followStance(this.walk.pos);
     this.cast.lookAt(this.flying ? this.flying.pos : this.board.position);
     this.cast.update(dt, this.time);
-    this.cast.members.forEach((m) => { if (m) m.puppet.drunk = m.seat === 0 ? this.bar.drunk : 0; });
+    this.cast.members.forEach((m) => {
+      if (m) m.puppet.drunk = m.seat === this.mySeat ? this.bar.drunk : (this.theirDrunk ?? 0);
+    });
     this._syncCastVisibility();
     this.maker.update(dt, this.time);
 

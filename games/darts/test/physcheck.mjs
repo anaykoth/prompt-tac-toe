@@ -14,6 +14,9 @@ function throwAt(tx, ty, speed) {
     pos: from.clone(), prev: from.clone(), vel: vel.clone(),
     quat: new THREE.Quaternion().setFromUnitVectors(FORWARD, vel.clone().normalize()),
     wobAmp: 0, wobFreq: 0, wobPhase: 0, roll: 0, rollRate: 0, magnus: 0, age: 0,
+    // sweep() draws its bounce-out rolls from the body so throws can be
+    // replayed identically online; unseeded randomness is fine for this suite
+    deflects: 0, rng: Math.random,
   };
   for (let i = 0; i < 480 * 6; i++) {
     integrate(b, SUBSTEP);

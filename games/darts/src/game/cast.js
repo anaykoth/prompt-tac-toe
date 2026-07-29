@@ -60,6 +60,8 @@ export class Cast {
     this.boardPos = boardPos;
     this.members = [];
     this.active = 0;
+    // which seat the local player occupies — online this can be either one
+    this.stanceSeat = 0;
   }
 
   /** (Re)build a seat's puppet from a spec. */
@@ -93,9 +95,9 @@ export class Cast {
     }
   }
 
-  /** Player 0 throws from wherever they walked to. */
+  /** The local player throws from wherever they walked to. */
   followStance(v) {
-    const m = this.members[0];
+    const m = this.members[this.stanceSeat];
     if (m) m.stance = v;
   }
 
@@ -115,7 +117,7 @@ export class Cast {
       const p = m.puppet;
 
       // player 0 at the oche stands exactly where the camera does
-      const goal = (m.seat === 0 && m.seat === this.active && m.stance)
+      const goal = (m.seat === this.stanceSeat && m.seat === this.active && m.stance)
         ? _v.set(m.stance.x, m.stance.y, m.stance.z)
         : m.target;
 

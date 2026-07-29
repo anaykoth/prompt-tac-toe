@@ -16,6 +16,7 @@ const _v3 = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _e = new THREE.Euler();
 const _seg = { d: 0, t: 0, x: 0, y: 0, z: 0 };
+const EMPTY = [];
 
 /* ------------------------------------------------------------------ */
 /* Ballistic aiming                                                    */
@@ -165,13 +166,18 @@ function segPoint(a, b, p) {
 /**
  * Sweep the tip from prev -> pos and resolve the first thing it meets.
  * Returns null (still flying) or a hit descriptor.
+ *
+ * Every random draw here uses `b.rng` (see game/rng.js) so a throw replays
+ * identically on both players' screens and on the server.
  */
 export function sweep(b, world) {
   const a = b.prev, c = b.pos;
 
   /* --- an already-planted dart ------------------------------------ */
   let bestDart = null, bestT = 2, bestD = 0;
-  for (const d of world.stuck) {
+  // after a few ricochets stop testing darts entirely: a slow dart can end up
+  // parked inside another's collision radius and deflect off it forever
+  for (const d of (b.deflects >= 3 ? EMPTY : world.stuck)) {
     const s = segPoint(a, c, d.tip);
     if (s.d < 0.0135 && s.t < bestT) {
       bestDart = d; bestT = s.t; bestD = s.d;
@@ -188,7 +194,7 @@ export function sweep(b, world) {
   if (bestDart && (planeT < 0 || bestT < planeT)) {
     const speed = b.vel.length();
     // dead centre on the shaft: it wedges in (Robin Hood). Otherwise deflect.
-    const robin = bestD < 0.0042 && Math.random() < 0.5;
+    const robin = bestD < 0.0042 && b.rng() < 0.5;
     return {
       type: robin ? 'robin' : 'deflect',
       point: _v3.clone(),
@@ -213,7 +219,7 @@ export function sweep(b, world) {
       const sc = scoreAt(lx, ly);
       const wire = nearWire(lx, ly);
       const bounceChance = (wire ? 0.30 : 0.015) + Math.max(0, 0.55 - bite) * 0.8;
-      if (Math.random() < bounceChance) {
+      if (b.rng() < bounceChance) {
         return { type: 'bounce', point: p, surface: 'board', score: null, speed, wire };
       }
       return { type: 'stick', point: p, surface: 'board', score: sc, local: { x: lx, y: ly }, speed };
@@ -222,7 +228,7 @@ export function sweep(b, world) {
       return { type: 'stick', point: p, surface: 'surround', score: null, local: { x: lx, y: ly }, speed };
     }
     // plaster: almost always spits the dart back out
-    if (Math.random() < 0.22 && bite > 0.75 && p.y < 1.1) {
+    if (b.rng() < 0.22 && bite > 0.75 && p.y < 1.1) {
       return { type: 'stick', point: p, surface: 'wall', score: null, speed };
     }
     return { type: 'bounce', point: p, surface: 'wall', score: null, speed };

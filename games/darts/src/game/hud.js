@@ -55,6 +55,7 @@ export class Hud {
       walk: $('#walk'),
       pts: $('#pts'),
       nameplate: $('#nameplate'),
+      presence: $('#presence'),
     };
     this._toastT = 0;
     this._shownPoints = -1;
@@ -153,9 +154,24 @@ export class Hud {
     this.styleBtns.forEach((b, i) => b.classList.toggle('on', this.styleKeys[i] === key));
   }
 
-  setNames(a, b) {
-    this.els.p[0].querySelector('.p-name').textContent = a;
-    this.els.p[1].querySelector('.p-name').textContent = b;
+  /**
+   * @param {object} opts  `swap` when the local player holds seat 1, so the
+   *   scoreboard still reads left-to-right as seat 0, seat 1 for both players.
+   */
+  setNames(a, b, { swap = false } = {}) {
+    const [left, right] = swap ? [b, a] : [a, b];
+    this.els.p[0].querySelector('.p-name').textContent = left;
+    this.els.p[1].querySelector('.p-name').textContent = right;
+  }
+
+  /** Is the other seat actually here, and how far gone are they. */
+  presence(online, name, state) {
+    const el = this.els.presence;
+    if (!name) { el.classList.remove('on'); return; }
+    el.classList.add('on');
+    el.classList.toggle('here', !!online);
+    el.querySelector('.pr-name').textContent = name;
+    el.querySelector('.pr-state').textContent = online ? state : 'away';
   }
 
   sync(match) {
