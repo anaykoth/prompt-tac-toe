@@ -18,6 +18,8 @@ export default function Home() {
   const [data, setData] = useState(null);
   const [flash, setFlash] = useState(null);
   const [offline, setOffline] = useState(false);
+  const [canPip, setCanPip] = useState(false);
+  const [compact, setCompact] = useState(false);
   const tokenRef = useRef(null);
   const flashTimer = useRef(null);
 
@@ -30,8 +32,25 @@ export default function Home() {
       window.history.replaceState({}, "", url.pathname + url.search);
     }
     tokenRef.current = localStorage.getItem("ttt-token");
+    if (url.searchParams.get("compact")) setCompact(true);
+    // Chrome/Edge only; hidden inside the pip iframe itself.
+    if ("documentPictureInPicture" in window && window === window.top) setCanPip(true);
     setReady(true);
   }, []);
+
+  const popOut = async () => {
+    try {
+      const pip = await window.documentPictureInPicture.requestWindow({ width: 380, height: 540 });
+      pip.document.title = "Prompt-Tac-Toe";
+      pip.document.body.style.margin = "0";
+      const f = pip.document.createElement("iframe");
+      f.src = "/?compact=1";
+      f.style.cssText = "border:0;width:100%;height:100%;display:block;";
+      pip.document.body.appendChild(f);
+    } catch {
+      showFlash("Couldn't open picture-in-picture.");
+    }
+  };
 
   const refresh = useCallback(async () => {
     try {
@@ -139,10 +158,17 @@ export default function Home() {
   };
 
   return (
-    <main className="wrap">
+    <main className={`wrap${compact ? " compact" : ""}`}>
       <header className="top">
         <h1 className="title">Prompt-Tac-Toe</h1>
-        <span className="muted">{date}</span>
+        <span className="topright">
+          {!compact && <span className="muted">{date}</span>}
+          {canPip && (
+            <button className="popout" onClick={popOut} title="Float the board above other windows">
+              Pop out
+            </button>
+          )}
+        </span>
       </header>
 
       <div className="scoreboard">
@@ -198,11 +224,13 @@ export default function Home() {
         </div>
       </div>
 
-      <p className="muted small center">
-        Prompts today - {names.X}: {st.prompts.X ?? 0} · {names.O}: {st.prompts.O ?? 0}
-      </p>
+      {!compact && (
+        <p className="muted small center">
+          Prompts today - {names.X}: {st.prompts.X ?? 0} · {names.O}: {st.prompts.O ?? 0}
+        </p>
+      )}
 
-      {results.length > 0 && (
+      {!compact && results.length > 0 && (
         <section className="history">
           <h2>Past days</h2>
           {results.map((r) => (
@@ -220,11 +248,13 @@ export default function Home() {
         </section>
       )}
 
-      <footer className="muted small">
-        Every Claude prompt banks a move (max {creditCap}). Your move's cell decides
-        which board your opponent plays next. Win three small boards in a row - or
-        hold more boards at midnight ET.
-      </footer>
+      {!compact && (
+        <footer className="muted small">
+          Every Claude prompt banks a move (max {creditCap}). Your move's cell decides
+          which board your opponent plays next. Win three small boards in a row - or
+          hold more boards at midnight ET.
+        </footer>
+      )}
     </main>
   );
 }

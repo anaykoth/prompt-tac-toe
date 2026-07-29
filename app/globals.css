@@ -32,6 +32,49 @@ body {
   justify-content: space-between;
 }
 
+.topright {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.popout {
+  border: 1px solid var(--line-thin);
+  background: #fff;
+  border-radius: 6px;
+  padding: 3px 9px;
+  font-size: 0.75rem;
+  color: #55555c;
+  cursor: pointer;
+}
+
+.popout:hover {
+  background: #ececff;
+}
+
+.wrap.compact {
+  max-width: none;
+  padding: 8px 10px 14px;
+}
+
+.compact .title {
+  font-size: 1rem;
+}
+
+.compact .scoreboard {
+  margin: 6px 0 2px;
+  font-size: 0.9rem;
+}
+
+.compact .status {
+  margin: 6px 0;
+  font-size: 0.85rem;
+}
+
+.compact .credits {
+  margin-top: 10px;
+}
+
 .title {
   font-size: 1.35rem;
   font-weight: 800;
