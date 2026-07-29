@@ -14,6 +14,7 @@ import { Hud, dartReaction, visitReaction } from './game/hud.js';
 import { Bar, DRINKS } from './game/bar.js';
 import { Walk } from './game/walk.js';
 import { OnlineSession, readToken } from './net/online.js';
+import { LiveLink, SeenSeeds } from './net/live.js';
 import { launchMessage, readLaunch } from './game/replay.js';
 import { newSeed } from './game/rng.js';
 import { Cast, CHARACTERS, opponentSpec } from './game/cast.js';
@@ -82,6 +83,8 @@ class Game {
 
     this.activeDarts = [];
     this.dartPool = [];
+    this._liveSeeds = new SeenSeeds();
+    this._ghostData = null;
 
     addEventListener('keydown', (e) => this._key(e));
     addEventListener('keyup', (e) => this._keyUp(e));
@@ -251,6 +254,15 @@ class Game {
   _applyOpponentCam() {
     const m = this.cast.members[this.theirSeat];
     const p = m ? m.pos : new THREE.Vector3(0.16, this.arena.stageH, OCHE_DIST + 0.22);
+    // while their aim is streaming in (or their dart is airborne off the live
+    // echo), a side-on broadcast angle keeps thrower AND board in frame — the
+    // shoulder angle faces away from the board and would hide the aim ghost
+    if (this._liveFresh() || (this.flying && this.flying.remote)) {
+      _pos.set(2.95, 1.72, OCHE_DIST * 0.62);
+      _look.set(p.x * 0.35, 1.5, OCHE_DIST * 0.52);
+      this._setCam(_pos, _look, 44, 3.2);
+      return;
+    }
     // front quarter, between thrower and board: you see the face and the arm
     // come through, and the dart flies past camera on its way out
     _pos.set(p.x + 1.8, p.y + 1.42, p.z - 2.3);
@@ -428,11 +440,25 @@ class Game {
     this.cast.set(r.seat, this.mySpec);
     this.hud.toast('CONNECTED', `YOU ARE ${r.name}`, 'var(--green)');
     this._syncNames();
+
+    // the live layer: aim stream + instant launch echo over a broadcast
+    // channel; the poll stays underneath as the authoritative safety net
+    this.live?.stop();
+    this.live = new LiveLink({
+      seat: r.seat,
+      onAim: (p) => this._onLiveAim(p),
+      onLaunch: (p) => this._onLiveLaunch(p),
+      onPresence: (s) => this._onLivePresence(s),
+    });
+    this.live.connect();
   }
 
   _goOffline() {
     this.net?.stop();
     this.net = null;
+    this.live?.stop();
+    this.live = null;
+    this._ghostData = null;
     this.theirDrunk = 0;
     this.cast.stanceSeat = 0;
     this.cast.set(0, this.mySpec);
@@ -470,9 +496,10 @@ class Game {
     this._syncNames();
 
     const turnWas = this.match.current;
-    // never yank state out from under a dart of our own that is still resolving
+    // never yank state out from under a dart that is still resolving — with
+    // the live echo, remote darts can be airborne well before the poll lands
     const mine = this.flying && !this.flying.remote;
-    if (mine || (this.phase === 'flight' && this._myTurn())) return;
+    if (mine || this.phase === 'flight') return;
     this.match.adopt(match);
     this.hud.sync(this.match);
     if (replayAll || this.match.current !== turnWas) this._beginVisit();
@@ -480,12 +507,60 @@ class Game {
 
   _onNetThrow(t) {
     if (t.seat === this.mySeat) return;      // already flew locally
+    // the live echo may have flown this dart seconds ago
+    if (!this._liveSeeds.fresh(t.launch?.seed)) return;
     this._remoteThrow(t.seat, t.launch);
   }
 
   _onNetError(e) {
     if (e === 'not-your-turn' || e === 'conflict') return;   // the poll will fix it
     this.hud.toast('OFFLINE', String(e).toUpperCase().replace(/-/g, ' '), 'var(--hot)');
+  }
+
+  /* ---------------- live layer ---------------- */
+
+  _onLiveAim(p) {
+    if (!this.isOnline || p.seat !== this.theirSeat) return;
+    this._ghostData = { x: p.x, y: p.y, k: p.k ?? 0, t: this.time };
+  }
+
+  _onLiveLaunch(p) {
+    if (!this.isOnline || p.seat !== this.theirSeat || this.phase === 'over') return;
+    if (!this._liveSeeds.fresh(p.launch?.seed)) return;
+    this._ghostData = null;
+    this._remoteThrow(p.seat, p.launch);
+  }
+
+  _onLivePresence(seats) {
+    this.liveSeats = seats;
+    const them = this.net?.seats?.find((s) => s.seat === this.theirSeat);
+    if (them) {
+      this.hud.presence(
+        seats.has(this.theirSeat) || them.online,
+        (them.name || '').toUpperCase(),
+        this._theirState(),
+      );
+    }
+  }
+
+  /** Their aim is on screen only while packets keep arriving. */
+  _liveFresh() { return !!this._ghostData && this.time - this._ghostData.t < 1.2; }
+
+  /** The other player's reticle: a ring on the board in their accent. */
+  _ensureGhost() {
+    if (this.ghost) return this.ghost;
+    const g = new THREE.Group();
+    this.ghostMat = new THREE.MeshBasicMaterial({
+      color: ACCENT[this.theirSeat], transparent: true, opacity: 0.8,
+      side: THREE.DoubleSide, depthWrite: false,
+    });
+    g.add(new THREE.Mesh(new THREE.RingGeometry(0.022, 0.032, 26), this.ghostMat));
+    g.add(new THREE.Mesh(new THREE.CircleGeometry(0.006, 12), this.ghostMat));
+    g.position.set(0, BOARD_HEIGHT, 0.012);
+    g.visible = false;
+    this.scene.add(g);
+    this.ghost = g;
+    return g;
   }
 
   _applyOpponent() {
@@ -628,6 +703,8 @@ class Game {
       roll: -ev.lateralPx * 0.05 + (Math.random() - 0.5) * 6,
       magnus: -ev.lateralPx * 0.0004,
     });
+    // echo first — their screen starts the flight before our POST round-trips
+    this.live?.sendLaunch(msg);
     this._launchLocal(this.match.current, msg);
     if (this.isOnline) this.net.submit(msg, this.bar.drunk);
   }
@@ -992,6 +1069,33 @@ class Game {
     if (this.net) this.net.drunk = this.bar.drunk;
 
     this.control.update(dt);
+
+    // stream my aim to the other seat while I line up
+    if (this.live?.up && this.isOnline && this.phase === 'aim'
+        && this._myTurn() && this.control.enabled) {
+      const c = this.control;
+      const aim = c.state === 'aim' ? c.target : c.frozenTarget;
+      const pull = c.state === 'wind' || c.state === 'flick' ? clamp(c.pull / 210, 0, 1) : 0;
+      const meter = c.state === 'meter' ? c._meterValue() : 0;
+      this.live.sendAim({
+        x: +aim.x.toFixed(3), y: +aim.y.toFixed(3),
+        k: +Math.max(pull, meter).toFixed(2),
+      });
+    }
+
+    // their reticle ghost, alive only while packets arrive
+    if (this.ghost || this._liveFresh()) {
+      const g = this._ensureGhost();
+      const live = this._liveFresh() && this._remoteTurn() && !this.flying;
+      g.visible = live;
+      if (live) {
+        const d = this._ghostData;
+        g.position.x = lerp(g.position.x, d.x, 0.25);
+        g.position.y = lerp(g.position.y, d.y, 0.25);
+        g.scale.setScalar(1 + d.k * 0.75 + Math.sin(this.time * 6) * 0.05 * (1 - d.k));
+        this.ghostMat.opacity = 0.45 + d.k * 0.5;
+      }
+    }
 
     // held dart follows the wind-up
     if (this.held.visible) {

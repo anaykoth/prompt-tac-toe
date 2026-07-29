@@ -287,6 +287,15 @@ server already counted them, and doing both double-counts every dart.
 
 Reload mid-leg and the client replays the whole log to rebuild the board.
 
+**Live spectating rides on top of the poll** (`net/live.js`). A Supabase
+Realtime broadcast channel streams the thrower's aim (~22 Hz) so the other
+seat sees the reticle wander and the wind-up charge as it happens, and echoes
+each launch the instant it leaves the hand — the flight starts on both screens
+within ~100 ms, with a side-on broadcast camera holding thrower and board in
+frame. The channel is spectacle only: launches are deduped by seed against the
+polled log (`test/livecheck.mjs`), scoring never moves off the token-gated
+API, and if the socket drops everything degrades back to plain polling.
+
 ## Taking it further
 
 Not done yet: legs and sets, a match history, and spectators. The throw log
