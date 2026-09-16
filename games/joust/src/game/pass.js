@@ -362,10 +362,12 @@ export class PassSim {
     const pt = hit.point;
     let type = 'hit', points = POINTS.glance, kick = 0, selfKick = 0;
 
-    if (pt.y < v.hipWorld.y - 0.05 || hit.what === 'horse') {
-      type = 'foul'; points = POINTS.foul; kick = 0; selfKick = impulse * 0.3; r.fouled = true;
-    } else if (hit.what === 'barrier') {
+    // the tilt comes first: skimming it snags the lance (your problem), it is not
+    // a foul on the other rider
+    if (hit.what === 'barrier') {
       type = 'barrier'; points = 0; L.broken = true; selfKick = impulse * IMPACT.barrierKick;
+    } else if (pt.y < v.hipWorld.y - 0.05 || hit.what === 'horse') {
+      type = 'foul'; points = POINTS.foul; kick = 0; selfKick = impulse * 0.3; r.fouled = true;
     } else if (hit.what === 'shield') {
       if (inc > IMPACT.glanceAngle) {
         type = 'glance'; points = POINTS.glance; kick = impulse * (1 - IMPACT.shieldAbsorb) * 0.4;
