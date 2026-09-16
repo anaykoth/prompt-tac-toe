@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <title>TILT ALLEY — Muppet Jousting</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🐴</text></svg>" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="stage"></canvas>
+
+    <!-- lance tip marker -->
+    <div id="reticle" class="hidden">
+      <svg viewBox="0 0 64 64" width="64" height="64">
+        <circle cx="32" cy="32" r="15" class="ret-ring" />
+        <circle cx="32" cy="32" r="1.6" class="ret-dot" />
+        <path d="M32 6 v9 M32 49 v9 M6 32 h9 M49 32 h9" class="ret-tick" />
+      </svg>
+    </div>
+
+    <!-- couch meter -->
+    <div id="couch" class="hidden">
+      <div id="couch-track"><div id="couch-fill"></div></div>
+      <div id="couch-label">COUCH — HOLD LMB</div>
+    </div>
+
+    <!-- balance -->
+    <div id="balance" class="hidden">
+      <svg viewBox="0 0 100 100">
+        <circle cx="50" cy="46" r="34" class="bal-ring" />
+        <circle cx="50" cy="46" r="30" class="bal-fall" />
+        <path d="M50 12 v68 M16 46 h68" class="bal-cross" />
+        <circle cx="50" cy="46" r="4.2" class="bal-dot" />
+        <text x="50" y="94" class="bal-label">BALANCE</text>
+      </svg>
+    </div>
+
+    <!-- scoreboard -->
+    <div id="hud">
+      <div class="board-panel">
+        <div class="player" id="p0">
+          <div class="p-name">YOU</div>
+          <div class="p-score">0</div>
+          <div class="p-meta"><span class="p-last">—</span><span class="p-out"></span></div>
+        </div>
+        <div class="divider">
+          <div class="pass-label">PASS</div>
+          <div class="pass-num">1 OF 5</div>
+        </div>
+        <div class="player" id="p1">
+          <div class="p-name">THE KNIGHT</div>
+          <div class="p-score">0</div>
+          <div class="p-meta"><span class="p-last">—</span><span class="p-out"></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- the bar tab (same markup as darts so the Bar/hud code ports) -->
+    <div id="bar">
+      <div class="bar-head">
+        <span class="bar-title">THE BAR</span>
+        <span class="bar-points"><b>0</b><i>pts</i></span>
+      </div>
+      <div class="bar-meter">
+        <span class="bar-state">SOBER</span>
+        <div class="drunk-track"><div class="drunk-fill"></div></div>
+        <span class="bar-mult">&times;1.0</span>
+      </div>
+      <div id="drinks"></div>
+      <p class="bar-hint"><b>B</b> — round of drinks</p>
+    </div>
+
+    <!-- the armourer -->
+    <div id="store" class="shut">
+      <div class="store-head">
+        <span class="store-title">THE ARMOURER</span>
+        <span class="store-points"><b>0</b> pts</span>
+      </div>
+      <div id="store-list"></div>
+      <p class="store-hint">M — close · masks are bought with bar points</p>
+    </div>
+
+    <!-- toasts -->
+    <div id="toast"></div>
+    <div id="pts"></div>
+    <div id="callout"></div>
+
+    <!-- settings -->
+    <div id="panel" class="collapsed">
+      <button id="panel-toggle" title="Settings (Tab)">⚙</button>
+      <div id="panel-body">
+        <h3>RENDER STYLE</h3>
+        <div id="styles"></div>
+        <h3>MATCH</h3>
+        <label class="row"><span>Passes</span>
+          <select id="opt-passes">
+            <option value="3">3</option>
+            <option value="5" selected>5</option>
+            <option value="7">7</option>
+          </select>
+        </label>
+        <label class="row"><span>To the unhorsing</span><input type="checkbox" id="opt-unhorse" /></label>
+        <label class="row"><span>Opponent</span>
+          <select id="opt-opponent">
+            <option value="online">Online — vs the other seat</option>
+            <option value="cpu-squire">CPU — Squire</option>
+            <option value="cpu-knight" selected>CPU — Knight</option>
+            <option value="cpu-black">CPU — Black Knight</option>
+          </select>
+        </label>
+        <h3>FEEL</h3>
+        <label class="row"><span>Crowd size</span><input type="range" id="opt-crowd" min="24" max="220" step="4" value="132" /></label>
+        <label class="row"><span>Sensitivity</span><input type="range" id="opt-sens" min="0.4" max="2.2" step="0.05" value="1" /></label>
+        <label class="row"><span>Sound</span><input type="checkbox" id="opt-sound" checked /></label>
+        <label class="row"><span>Drunk mode</span><input type="checkbox" id="opt-bar" checked /></label>
+        <button id="btn-restart">RESTART MATCH</button>
+        <p class="hint">Tab settings · 1-5 style · B bar · M store · C free cam · R restart</p>
+      </div>
+    </div>
+
+    <!-- puppet maker (same ids as darts) -->
+    <div id="maker" class="gone">
+      <div id="maker-panel">
+        <div id="maker-head">
+          <h2>BUILD YOUR PUPPET</h2>
+          <p>Somebody has to sit on the horse. Choose how unwell you look.</p>
+        </div>
+        <div id="maker-body"></div>
+        <div id="maker-foot">
+          <button id="mk-random">SURPRISE ME</button>
+          <button id="mk-done">THAT'S ME</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="presence"><span class="pr-dot"></span><span class="pr-name"></span><span class="pr-state"></span></div>
+    <div id="nameplate"><span class="np-name"></span><span class="np-sub"></span></div>
+
+    <!-- title / how to play -->
+    <div id="intro">
+      <div class="intro-card">
+        <h1>TILT<span>ALLEY</span></h1>
+        <p class="tag">five passes · lance in the right hand · a crowd of unwell puppets</p>
+        <ol>
+          <li><b>Move the mouse</b> to aim the lance. The reticle is your tip.</li>
+          <li><b>Hold left mouse</b> to couch. Couch too early and the arm tires and droops.</li>
+          <li><b>Hold right mouse</b> to raise the shield. It soaks the hit but you score nothing.</li>
+          <li><b>WASD</b> leans the torso. Lean into the blow or go over the side.</li>
+          <li><b>Space</b> spurs the horse. <b>H</b> flings your helmet at them, which is illegal and excellent.</li>
+          <li><b>B</b> the bar · <b>M</b> the armourer · <b>Tab</b> settings · <b>C</b> free cam · <b>R</b> restart</li>
+        </ol>
+        <button id="btn-make">BUILD YOUR PUPPET</button>
+        <button id="btn-start">TO THE LISTS</button>
+        <p class="hint">Lean left as you strike and the whole world tips with you.</p>
+      </div>
+    </div>
+
+    <div id="loading"><div class="spin"></div><span>SADDLING THE PUPPETS…</span></div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
