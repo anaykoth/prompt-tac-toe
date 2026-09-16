@@ -105,6 +105,53 @@ Shape of the result the client plays back:
   "unhorsed": 1, "score": [4, 7], "passNo": 3 }
 ```
 
+### The client half is written too: `games/shared/net/joust.js`
+
+`JoustSession` runs the whole pass lifecycle on the shared clock. The game
+supplies three things and renders what comes back:
+
+```js
+import { JoustSession } from '../../shared/net/joust.js';
+import { readToken } from '../../shared/net/live.js';
+import { resolvePass } from './game/pass.js';        // the pure pass sim
+
+const net = new JoustSession({
+  token: readToken(),
+  resolvePass,                                        // same function the server runs
+  input: () => ({ yaw, pitch, lean, sway }),          // lance + waist, read at 20 Hz while charging
+  on: {
+    state({ match, seats, seat, phase, pass }) {},    // every server read: scoreboard + presence
+    presence(seatsSet) {},                            // who is on the live channel
+    armed(pass) {},                                   // countdown = net.clock.until(pass.starts_at)
+    charge(pass) {},                                  // T0: run the horses on the fixed timeline
+    rider({ t, yaw, pitch, lean, sway }) {},          // the other rider, live, ~22 Hz
+    contact(pass) {},                                 // Tc: play the clash, show no verdict
+    result(r, { source, corrected }) {},              // the verdict: 'peer' within a packet, 'server' to confirm
+    over(match) {},
+    error(code) {},
+  },
+});
+await net.join(mySpec);
+net.ready();                 // the "charge!" button; re-sent by itself after a pass closes
+net.drunk = bar.drunk;       // heartbeats carry it like darts
+```
+
+Phases: `idle → armed → charging → contact → idle`, or `over`. `result` fires
+once per pass; a second time only if the server disagrees with the peer
+verdict (`corrected: true`), which is when the scoreboard moves and the
+replay should be re-played. `test/joust-e2e.mjs` drives two sessions
+through real passes against the real server code and database with a fake
+broadcast bus: live path, socket cut, and a tab that dies mid-charge.
+
+### What the game must provide
+
+| piece | contract |
+|---|---|
+| `resolvePass(traceA, traceB, seed)` | pure; no three.js, DOM or `Math.random` (seeded rng only); returns `{ hits: [{ seat, zone, points }], unhorsed: 0 \| 1 \| null }`; identical output for identical input at any frame rate |
+| the horses | position is a function of `t` since T0 only. No player control of speed. If speed control is wanted, it goes into the trace and into `resolvePass`, and the opponent's preview gets less exact |
+| `input()` | `{ yaw, pitch, lean, sway }` in [-1.5, 1.5] / [-1, 1]; drunk sway applied before sampling |
+| the replay | the local clash shows contact only; the impact animation is driven from `result` |
+
 ### Client wiring, in the order darts does it
 
 1. `readToken()` at boot (darts now does this too) so the player link sticks.

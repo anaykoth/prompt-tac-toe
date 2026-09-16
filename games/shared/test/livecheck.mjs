@@ -48,10 +48,19 @@ assert.equal(seen.fresh(5), true); assert.equal(seen.fresh(5), false);
 assert.equal(seen.fresh('pass-3'), true); assert.equal(seen.fresh(0), false);
 seen.fresh(6); assert.equal(seen.fresh(5), true);              // evicted the oldest
 
-const clock = new ServerClock();
-clock.sync(Date.now() + 5000, 200);                            // server 5 s ahead, 200 ms rtt
-assert.ok(Math.abs(clock.offset - 5100) < 50);
-assert.ok(Math.abs(clock.until(clock.now() + 3000) - 3) < 0.05);
+let fake = 1_000_000;
+const clock = new ServerClock({ nowFn: () => fake });
+clock.sync(fake + 5000, 200);                                  // server 5 s ahead, 200 ms rtt
+assert.equal(clock.offset, 5100);
+assert.equal(clock.until(clock.now() + 3000), 3);
+clock.sync(fake + 5000 + 900, 1800);                           // a cold start: slow, skewed, ignored
+assert.equal(clock.offset, 5100);
+clock.sync(fake + 5000, 40);                                   // a quicker sample wins
+assert.equal(clock.offset, 5020);
+fake += 10_000;
+assert.equal(clock.now(), fake + 5020);
+clock.sync(NaN, 10);
+assert.equal(clock.offset, 5020);
 
 assert.throws(() => new LiveLink({ seat: 0 }), /channel/);
 console.log('shared livecheck ok');

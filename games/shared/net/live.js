@@ -103,19 +103,31 @@ export class SeenIds {
 
 /**
  * Shared wall clock for simultaneous games. Every authoritative API reply
- * carries the server's `now` (ms); feeding it here keeps a smoothed offset so
- * both browsers count the same pass down to the same instant regardless of
- * their own clocks. Darts never needs this; jousting cannot work without it.
+ * carries the server's `now` (ms); feeding it here with the request's round
+ * trip keeps an offset so both browsers count the same pass down to the same
+ * instant regardless of their own clocks. The lowest-rtt sample of the recent
+ * window wins (a cold-started function can take a second to answer and would
+ * otherwise skew the estimate by half of that). Darts never needs this;
+ * jousting cannot work without it.
  */
 export class ServerClock {
-  constructor() { this.offset = 0; this.samples = 0; }
+  constructor({ nowFn = () => Date.now(), window = 8 } = {}) {
+    this._now = nowFn;
+    this._window = window;
+    this._samples = [];      // { est, rtt }
+    this.offset = 0;
+    this.samples = 0;
+  }
   /** @param {number} serverNow ms  @param {number} rttMs round trip of that request */
   sync(serverNow, rttMs = 0) {
-    const est = serverNow + rttMs / 2 - Date.now();
-    this.offset = this.samples === 0 ? est : this.offset * 0.7 + est * 0.3;
+    if (!Number.isFinite(serverNow)) return;
+    const rtt = Math.max(0, Number(rttMs) || 0);
+    this._samples.push({ est: serverNow + rtt / 2 - this._now(), rtt });
+    if (this._samples.length > this._window) this._samples.shift();
+    this.offset = this._samples.reduce((b, s) => (s.rtt < b.rtt ? s : b)).est;
     this.samples++;
   }
-  now() { return Date.now() + this.offset; }
+  now() { return this._now() + this.offset; }
   /** seconds until a server timestamp; negative once it has passed */
   until(serverMs) { return (serverMs - this.now()) / 1000; }
 }

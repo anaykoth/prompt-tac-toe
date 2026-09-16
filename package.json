@@ -11,7 +11,9 @@
     "build:darts": "npm run build --workspace=splinter-alley",
     "dev:darts": "npm run dev --workspace=splinter-alley",
     "test:darts": "npm run test --workspace=splinter-alley",
-    "test:shared": "node games/shared/test/livecheck.mjs"
+    "test:shared": "node games/shared/test/livecheck.mjs",
+    "test:joust": "node test/joust-servercheck.mjs && node test/joust-e2e.mjs",
+    "test:pg": "scripts/test-pg.sh"
   },
   "dependencies": {
     "next": "^15.3.4",
