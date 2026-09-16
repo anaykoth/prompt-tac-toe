@@ -40,6 +40,8 @@ Jousting differs from darts in one way that matters: both riders act **at the
 same time**. That is why `ServerClock` exists. Everything else is the darts
 recipe with the nouns changed.
 
+**The server half below already exists on this branch**: `supabase/migrations/0003_joust_tables.sql`, `lib/joust.mjs`, and `app/api/joust/{join,state,ready,trace,presence}`. Until the game calls `setResolver(resolvePass)` every pass resolves as a miss. Not yet exercised against a database; give it a `servercheck` like darts' before it is trusted.
+
 ### Tables (migration `0003_joust_tables.sql`, same conventions as 0002)
 
 | table | what |
