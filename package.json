@@ -13,7 +13,8 @@
     "test:darts": "npm run test --workspace=splinter-alley",
     "build:joust": "npm run build --workspace=tilt-alley",
     "dev:joust": "npm run dev --workspace=tilt-alley",
-    "test:joust": "npm run test --workspace=tilt-alley"
+    "test:joust": "npm run test --workspace=tilt-alley",
+    "test:shared": "node games/shared/test/livecheck.mjs"
   },
   "dependencies": {
     "next": "^15.3.4",
