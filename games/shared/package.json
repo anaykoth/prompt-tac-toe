@@ -1,0 +1,8 @@
+{
+  "name": "live-shared",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Game-agnostic live-play layer shared by the games in this repo",
+  "scripts": { "test": "node test/livecheck.mjs" }
+}

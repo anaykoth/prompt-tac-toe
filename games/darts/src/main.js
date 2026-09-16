@@ -77,6 +77,7 @@ class Game {
     this._buildControls();
     this._buildUI();
 
+    readToken();   // a ?t= player link sticks on first visit, not only once Online is picked
     this.match = new Match({ start: this.opts.start, doubleOut: this.opts.doubleOut });
     this._applyOpponent();
     this.hud.sync(this.match);
