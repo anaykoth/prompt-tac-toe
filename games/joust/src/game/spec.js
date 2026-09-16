@@ -51,7 +51,7 @@ export const RIDER = {
   helmR: 0.16,
   torsoR: 0.22,               // torso capsule radius
   // balance: inverted pendulum about the hip
-  leanTorque: 9.0,            // rad/s^2 of muscle torque at full stick
+  leanTorque: 36.0,           // rad/s^2 of muscle torque at full stick (against seatSpring 26 this settles ~60% of maxLean)
   leanRate: 4.5,              // how fast the commanded lean is reached (1/s)
   seatCone: 0.45,             // rad: saddle spring holds you inside this
   seatSpring: 26.0,           // rad/s^2 per rad inside the cone
@@ -84,7 +84,7 @@ export const SHIELD = {
   w: 0.52, h: 0.62,           // plate size
   offLeft: 0.24,              // centre sits this far to the rider's LEFT of the torso axis
   offUp: 0.08,                // above the shoulder line? no: above the hip by shoulder*0.55
-  tilt: 0.35,                 // rad, plate normal turned away from the opponent
+  tilt: 0.18,                 // rad, plate normal turned away from the opponent (0.35 made every square couch a glance)
   guardRaise: 0.30,           // m the plate rises when guarding
 };
 
@@ -112,7 +112,7 @@ export const DEFAULT_PASSES = 5;
 /* ---------------- impact ---------------- */
 
 export const IMPACT = {
-  glanceAngle: 0.96,          // rad off the surface normal beyond which a hit is glancing
+  glanceAngle: 1.02,          // rad off the surface normal beyond which a hit is glancing
   impulseK: 0.11,             // rad/s of balance kick per (kg m/s) of impulse
   effMass: 5.5,               // effective lance+arm mass for impulse
   shieldAbsorb: 0.35,         // fraction of impulse the shield soaks up

@@ -304,6 +304,7 @@ export class PassSim {
     const L = r.lance, inp = r.input;
     L.couch = clamp(L.couch + (inp.couch ? 1 : -1) * LANCE.couchRate * dt, 0, 1);
     if (L.couch > 0.5) L.fatigue += dt;
+    else L.fatigue = Math.max(0, L.fatigue - dt * 0.8);
     r.guard = clamp(r.guard + (inp.guard && r.helmet.throwing === 0 ? 1 : -1) * 4 * dt, 0, 1);
     if (r.helmet.throwing > 0 || (this.t - r.helmet.releaseT >= 0 && this.t - r.helmet.releaseT < HELMET.vulnerable && r.helmet.releaseT > 0)) r.guard = 0;
     // aim command through a spring-damper
@@ -322,8 +323,10 @@ export class PassSim {
       plate: { center: v.shield.centerWorld, normal: v.shield.normalWorld, right: v.shield.rightWorld, up: v.shield.upWorld, hw: v.shield.hw, hh: v.shield.hh },
       head: v.headWorld, headR: RIDER.helmR,
       torsoA: v.hipWorld, torsoB: v.shoulderWorld, torsoR: RIDER.torsoR,
-      horseA: V(v.horse.x, HORSE.saddleH - 0.5, v.horse.z - v.f0.z * 0.9),
-      horseB: V(v.horse.x, HORSE.saddleH - 0.5, v.horse.z + v.f0.z * 0.9),
+      // the barrel sits below the saddle; at 0.5 it reached the rider's hip and
+      // turned every torso-height strike into a foul
+      horseA: V(v.horse.x, HORSE.saddleH - 0.62, v.horse.z - v.f0.z * 0.9),
+      horseB: V(v.horse.x, HORSE.saddleH - 0.62, v.horse.z + v.f0.z * 0.9),
     };
   }
 
@@ -340,7 +343,7 @@ export class PassSim {
       const hs = segPlate(p0, p1, S.plate, LANCE.tipR); if (hs) cands.push({ ...hs, what: 'shield' });
       const hh = segSphere(p0, p1, S.head, RIDER.helmR + LANCE.tipR); if (hh) cands.push({ ...hh, what: 'helm' });
       const ht = segCapsule(p0, p1, S.torsoA, S.torsoB, RIDER.torsoR + LANCE.tipR); if (ht) cands.push({ ...ht, what: 'torso' });
-      const hr = segCapsule(p0, p1, S.horseA, S.horseB, 0.45 + LANCE.tipR); if (hr) cands.push({ ...hr, what: 'horse' });
+      const hr = segCapsule(p0, p1, S.horseA, S.horseB, 0.36 + LANCE.tipR); if (hr) cands.push({ ...hr, what: 'horse' });
       const hb = segBox(p0, p1, V(-BARRIER_W / 2, 0, -LANE_HALF), V(BARRIER_W / 2, BARRIER_H, LANE_HALF), LANCE.tipR);
       if (hb) cands.push({ ...hb, what: 'barrier' });
       if (!cands.length) continue;
@@ -391,8 +394,10 @@ export class PassSim {
     const off = rel.dot(v.frame.right);
     const height = Math.max(0, rel.dot(v.frame.up));
     const cosLat = Math.abs(attacker.lance.dirWorld.dot(v.f0));
-    v.torso.vPitch += -IMPACT.impulseK * kick * cosLat * (1 + 0.8 * height) * (isSelf ? -1 : 1);
-    v.torso.vRoll += IMPACT.impulseK * kick * (off / 0.3);
+    v.torso.vPitch += -IMPACT.impulseK * kick * cosLat * (1 + 0.8 * height);
+    void isSelf;
+    // the shove is away from the contact point: a hit left of the axis rolls you right
+    v.torso.vRoll += -IMPACT.impulseK * kick * (off / 0.3);
     if (!v.unseated && (Math.abs(v.torso.pitch) > RIDER.fallAngle || Math.abs(v.torso.roll) > RIDER.fallAngle)) this._unseat(v);
   }
 
@@ -443,7 +448,7 @@ export class PassSim {
     const hh = segSphere(b.prev, b.pos, S.head, RIDER.helmR + rr); if (hh) { res = hh; what = 'head'; }
     if (!res) { const ht = segCapsule(b.prev, b.pos, S.torsoA, S.torsoB, RIDER.torsoR + rr); if (ht) { res = ht; what = 'torso'; } }
     if (!res) { const hp = segPlate(b.prev, b.pos, S.plate, rr); if (hp) { res = hp; what = 'shield'; } }
-    if (!res) { const hr = segCapsule(b.prev, b.pos, S.horseA, S.horseB, 0.45 + rr); if (hr) { res = hr; what = 'horse'; } }
+    if (!res) { const hr = segCapsule(b.prev, b.pos, S.horseA, S.horseB, 0.36 + rr); if (hr) { res = hr; what = 'horse'; } }
     if (!res) {
       const hb = segBox(b.prev, b.pos, V(-BARRIER_W / 2, 0, -LANE_HALF), V(BARRIER_W / 2, BARRIER_H, LANE_HALF), rr);
       if (hb) { res = hb; what = 'barrier'; }
