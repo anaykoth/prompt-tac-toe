@@ -25,6 +25,12 @@ Live at **https://prompt-tac-toe.vercel.app**
 `/darts` is a second game sharing this deployment — 3D darts against a crowd of
 unwell puppets. See [games/darts/README.md](games/darts/README.md).
 
+`/joust` is the third game: 3D jousting, same puppets, same crowd, same
+deterministic physics discipline. See [games/joust/README.md](games/joust/README.md).
+It is a Vite workspace built into `public/joust/` by `npm run build`, with
+`/api/joust/*` routes and `joust_*` tables (migration 0003).
+
+
 It is a self-contained static Vite build (three.js, no assets, no backend) that
 compiles into `public/darts/` as part of `npm run build`. It shares no code,
 routes, database or env vars with tic-tac-toe; the only touch points are the
