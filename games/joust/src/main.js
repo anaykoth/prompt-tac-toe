@@ -19,7 +19,7 @@ import { Hud, eventReaction } from './game/hud.js';
 import { Cpu, KNIGHTS } from './game/cpu.js';
 import { Store } from './game/store.js';
 import {
-  packInput, IMPACT, RIDER, SEAT, TICK, DEFAULT_PASSES, LANE_HALF,
+  packInput, IMPACT, RIDER, HORSE, SEAT, TICK, DEFAULT_PASSES, LANE_HALF,
 } from './game/spec.js';
 
 const $ = (s) => document.querySelector(s);
@@ -40,7 +40,8 @@ const _off = new THREE.Vector3();
 class Game {
   constructor() {
     this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(RIDE_FOV, innerWidth / innerHeight, 0.05, 140);
+    // near plane at 30 cm: in first person the helm rim and the lance butt sit closer than that
+    this.camera = new THREE.PerspectiveCamera(RIDE_FOV, innerWidth / innerHeight, 0.3, 140);
     this.scene.add(this.camera);
 
     this.renderer = new Renderer($('#stage'), this.scene, this.camera);
@@ -220,22 +221,32 @@ class Game {
    * right 0.7 m in the seat's own frame, looking 6 m ahead at chest height.
    * Mouse aim nudges the look point so the view leads the lance.
    */
+  /**
+   * First person: the camera IS the rider's head. The horse's neck is below,
+   * the lance runs out to the right, the tilt and the other rider come down
+   * the right-hand side. Unseated, you watch from where you landed.
+   */
   _applyChaseCam() {
     const s = SEAT[0];
     const r = this.sim?.riders?.[0];
-    const z = r?.horse?.z ?? s.startZ;
-    const x = r?.horse?.x ?? s.laneX;
-    const y = (r?.horse?.bobY ?? 0);
-
     const fx = s.forward[0], fz = s.forward[2];
     const rx = s.right[0], rz = s.right[2];
 
-    _pos.set(
-      x - fx * 3.4 + rx * 0.7,
-      1.9 + y * 0.6,
-      z - fz * 3.4 + rz * 0.7,
-    );
-    _look.set(x + fx * 6, 1.4, z + fz * 6);
+    if (r?.unseated && r.fall?.pos) {
+      _pos.set(r.fall.pos.x, r.fall.pos.y + 0.45, r.fall.pos.z);
+    } else if (r?.headWorld) {
+      // sighting down the lance: the eye sits over the right shoulder, so the
+      // horse's head is left of centre and the lance runs out from bottom right
+      _pos.set(r.headWorld.x + rx * 0.22, r.headWorld.y + 0.16, r.headWorld.z + rz * 0.22);
+    } else {
+      const eyeY = HORSE.saddleH + RIDER.hipAboveSaddle + RIDER.shoulderAboveHip + RIDER.headAboveShoulder + 0.16;
+      _pos.set(s.laneX + rx * 0.22, eyeY, s.startZ + rz * 0.22);
+    }
+    // look down the lane, a touch to the right so the tilt and the opponent's
+    // line sit in frame, and slightly down so the lance tip is in view
+    const lean = r?.torso ? r.torso.roll * 0.6 : 0;
+    _look.set(_pos.x + fx * 12 + rx * (1.0 + lean * 4), _pos.y - 0.18, _pos.z + fz * 12 + rz * (1.0 + lean * 4));
+    const x = _pos.x, y = 0, z = _pos.z; void x; void y; void z;
 
     // aim nudges the look direction by up to 0.35 rad either way
     const ay = this.input.aimX * 0.35, ap = this.input.aimY * 0.35;
@@ -496,7 +507,8 @@ class Game {
     this.tick = 0;
     this.evCursor = 0;
 
-    const n = Math.min(this.match.pass + 1, this.match.passes);
+    const n = Math.min(this.match.pass, this.match.passes);
+    this.hud.setRangeName?.(this._opponentName());
     this.hud.nameplate(`PASS ${n} OF ${this.match.passes}`,
       `${this.mySpec?.name || 'YOU'} vs ${this._opponentName()}`);
     this.hud.showCouch(false);
@@ -742,9 +754,28 @@ class Game {
       if (this.phase === 'pass') {
         this.hud.couch(me.lance?.couch ?? 0, me.lance?.fatigue ?? 0);
         this._placeReticle(me);
+        // where is he: distance down the lane and closing speed
+        const them = rs[1];
+        if (them?.horse && this.hud.range) {
+          const dist = Math.abs(me.horse.z - them.horse.z);
+          const closing = (me.horse.speed ?? 0) + (them.horse.speed ?? 0);
+          this.hud.showRange?.(true);
+          this.hud.range(dist, closing);
+        }
+        const c = me.lance?.couch ?? 0;
+        this.hud.prompt?.(me.unseated ? '' : c < 0.2 ? 'HOLD LEFT MOUSE TO COUCH' : c > 0.9 ? 'HOLD IT LEVEL' : '');
+      } else {
+        this.hud.showRange?.(false);
+        this.hud.prompt?.('');
       }
       this.hud.balance(me.torso?.pitch ?? 0, me.torso?.roll ?? 0, RIDER.fallAngle);
+    } else {
+      this.hud.showRange?.(false);
+      this.hud.prompt?.('');
     }
+    // in first person you are the rider: hide your own body, keep horse, lance, shield
+    const fpv = !this.freeCam && this.cam.mode === 'chase';
+    this.riders?.[0]?.setFirstPerson?.(fpv);
 
     // crowd + lists
     this.crowd.update(this.simTime, dt);

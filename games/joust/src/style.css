@@ -411,6 +411,34 @@ body.makermode #power, body.makermode #nameplate { opacity: 0; pointer-events: n
 /* TILT ALLEY additions                                              */
 /* ================================================================= */
 
+/* opponent range readout, centre top under the scoreboard */
+#range {
+  position: fixed; left: 50%; top: 128px; transform: translateX(-50%);
+  display: flex; gap: 14px; align-items: baseline; z-index: 6; pointer-events: none;
+  padding: 4px 14px; border-radius: 6px;
+  background: rgba(0,0,0,.38); border: 1px solid rgba(255,255,255,.12);
+  transition: opacity .25s ease;
+}
+#range.hidden { opacity: 0; }
+#range .rg-name { font-size: 11px; letter-spacing: .26em; color: var(--dim, #9a9384); text-transform: uppercase; }
+#range .rg-dist {
+  font-size: 22px; font-weight: 700; letter-spacing: .04em; color: var(--ink);
+  font-variant-numeric: tabular-nums; min-width: 4.2em; text-align: right;
+}
+#range.near .rg-dist { color: var(--gold, #ffd24a); }
+#range.near .rg-name { color: var(--gold, #ffd24a); }
+
+/* one-line instruction under the reticle: quiet, so the toast still owns the screen */
+#prompt {
+  position: fixed; left: 50%; top: 58%; transform: translateX(-50%);
+  font-size: clamp(16px, 2.4vw, 30px); font-weight: 600; letter-spacing: .28em;
+  text-transform: uppercase; color: rgba(236, 228, 208, .55);
+  text-shadow: 0 2px 18px rgba(0,0,0,.9);
+  pointer-events: none; z-index: 7; white-space: nowrap;
+  opacity: 0; transition: opacity .2s ease;
+}
+#prompt.on { opacity: 1; }
+
 /* the couch meter reuses the darts power-meter chrome */
 #couch {
   position: fixed; left: 50%; bottom: 74px; transform: translateX(-50%);

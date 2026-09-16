@@ -49,7 +49,13 @@ export class Hud {
       pts: $('#pts'),
       nameplate: $('#nameplate'),
       presence: $('#presence'),
+      range: $('#range'),
+      rangeName: $('#range .rg-name'),
+      rangeDist: $('#range .rg-dist'),
+      prompt: $('#prompt'),
     };
+    this._promptText = '';
+    this._rangeName = '';
     this._shownPoints = -1;
     this._shownStorePoints = -1;
     this._lastCouch = -1;
@@ -245,8 +251,48 @@ export class Hud {
         running && running[i] ? `this pass +${running[i]}`
           : last != null ? `last +${last}` : '—';
     }
-    const n = Math.min(match?.pass ?? 1, match?.passes ?? 5);
-    this.els.passNum.textContent = `${n} OF ${match?.passes ?? 5}`;
+    // match.pass is 1-based and is the pass being ridden NOW, so it is shown as
+    // is; once the match is over the counter parks on the last pass
+    const total = match?.passes ?? 5;
+    const n = match?.finished ? total : Math.max(1, Math.min(match?.pass ?? 1, total));
+    this.els.passNum.textContent = `${n} OF ${total}`;
+  }
+
+  /* ---------------- range + prompt ---------------- */
+
+  /** Name the rider the range readout is tracking (set once per opponent). */
+  setRangeName(name) {
+    this._rangeName = (name || 'THE OTHER ONE').toUpperCase();
+    if (this.els.rangeName) this.els.rangeName.textContent = this._rangeName;
+  }
+
+  /**
+   * Distance to the opponent, centre top. `closing` is optional and only
+   * tints the readout gold once they are inside 12 m (or already past).
+   * @param {number} metres  gap along the lane, never negative on screen
+   * @param {number} closing closing speed in m/s (unused for text, kept for callers)
+   */
+  range(metres, closing = 0) {
+    const el = this.els.range;
+    if (!el) return;
+    const m = Math.max(0, metres);
+    if (this.els.rangeName && !this.els.rangeName.textContent) this.els.rangeName.textContent = this._rangeName || 'THE OTHER ONE';
+    this.els.rangeDist.textContent = m >= 10 ? `${Math.round(m)} m` : `${m.toFixed(1)} m`;
+    el.classList.toggle('near', m < 12);
+    void closing;
+  }
+
+  showRange(on) { this.els.range?.classList.toggle('hidden', !on); }
+
+  /** One-line instruction under the reticle. Empty string clears it. */
+  prompt(text = '') {
+    const el = this.els.prompt;
+    if (!el) return;
+    const t = text || '';
+    if (t === this._promptText) return;
+    this._promptText = t;
+    if (t) { el.textContent = t; el.classList.add('on'); }
+    else el.classList.remove('on');
   }
 
   /** Remember what each seat took on the pass just finished. */

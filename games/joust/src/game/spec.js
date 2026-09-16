@@ -21,9 +21,14 @@ export const BARRIER_W = 0.12;
 export const GROUND_Y = 0;
 
 /** Per-seat frame. forward = direction of travel; right = lance side. */
+/**
+ * Anay's layout: the tilt is on each rider's RIGHT, the lance is in the right
+ * hand and points straight at the rider coming down your right-hand side, and
+ * the shield rides on the right flank facing the barrier.
+ */
 export const SEAT = [
-  { forward: [0, 0, -1], right: [1, 0, 0], laneX: +LANE_X, startZ: +START_Z },
-  { forward: [0, 0, +1], right: [-1, 0, 0], laneX: -LANE_X, startZ: -START_Z },
+  { forward: [0, 0, -1], right: [1, 0, 0], laneX: -LANE_X, startZ: +START_Z },
+  { forward: [0, 0, +1], right: [-1, 0, 0], laneX: +LANE_X, startZ: -START_Z },
 ];
 
 /* ---------------- the horse ---------------- */
@@ -67,9 +72,9 @@ export const LANCE = {
   length: 3.2,                // couch pivot -> tip
   pivotOffRight: 0.30,        // couch pivot sits this far to the rider's right of the shoulder
   pivotBelowShoulder: 0.12,
-  restPitch: 1.15,            // rad, tip up while carried
+  restPitch: 0.42,            // rad, carried at port: tip up a little, in view, never a flagpole
   couchRate: 1.9,             // couch progress per second (0 -> 1 in ~0.53 s)
-  crossYaw: 0.52,             // rad, level lance points this far left across the barrier
+  crossYaw: 0.53,             // rad, level lance angles this far RIGHT so the tip sits over their shield line
   aimRangeYaw: 0.42,          // rad, mouse full deflection in yaw
   aimRangePitch: 0.30,        // rad, mouse full deflection in pitch
   armSpring: 34.0,            // spring-damper: tip follows the command with lag
@@ -82,7 +87,7 @@ export const LANCE = {
 
 export const SHIELD = {
   w: 0.52, h: 0.62,           // plate size
-  offLeft: 0.24,              // centre sits this far to the rider's LEFT of the torso axis
+  offLeft: 0.24,              // centre sits this far to the rider's RIGHT (barrier side) of the torso axis
   offUp: 0.08,                // above the shoulder line? no: above the hip by shoulder*0.55
   tilt: 0.18,                 // rad, plate normal turned away from the opponent (0.35 made every square couch a glance)
   guardRaise: 0.30,           // m the plate rises when guarding

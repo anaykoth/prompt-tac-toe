@@ -269,11 +269,15 @@ export class PassSim {
 
     // shield plate
     const sh = r.shield;
-    sh.centerWorld.copy(r.shoulderWorld).addScaledVector(F.right, -SHIELD.offLeft)
-      .addScaledVector(F.up, -0.20 + r.guard * SHIELD.guardRaise);
-    const tilt = SHIELD.tilt + clamp(r.input.leanX, -1, 1) * 0.25;
+    // shield on the RIGHT flank, facing the tilt; the normal is turned a little
+    // to the rider's LEFT (away from the opponent); leaning right squares it up
+    // held out ahead of the body so the plate meets a lance before the torso does
+    sh.centerWorld.copy(r.shoulderWorld).addScaledVector(F.right, SHIELD.offLeft)
+      .addScaledVector(F.forward, 0.32)
+      .addScaledVector(F.up, -0.38 + r.guard * SHIELD.guardRaise);
+    const tilt = SHIELD.tilt - clamp(r.input.leanX, -1, 1) * 0.25;
     const qn = new THREE.Quaternion().setFromAxisAngle(F.up, 0);
-    sh.normalWorld.copy(F.forward).multiplyScalar(Math.cos(tilt)).addScaledVector(F.right, Math.sin(tilt)).normalize();
+    sh.normalWorld.copy(F.forward).multiplyScalar(Math.cos(tilt)).addScaledVector(F.right, -Math.sin(tilt)).normalize();
     sh.rightWorld.crossVectors(F.up, sh.normalWorld).normalize();
     sh.upWorld.crossVectors(sh.normalWorld, sh.rightWorld).normalize();
     void qn;
@@ -283,8 +287,10 @@ export class PassSim {
     L.pivotWorld.copy(r.shoulderWorld).addScaledVector(F.right, LANCE.pivotOffRight).addScaledVector(F.up, -LANCE.pivotBelowShoulder);
     // the couched lance is aimed from the SHOULDER line: the arm's own offset to
     // the right is compensated, otherwise the tip lands short of the barrier.
+    // the tip angles RIGHT across the tilt; the arm already sits to the right so
+    // less yaw is needed than the raw crossing angle
     const armComp = Math.asin(clamp(LANCE.pivotOffRight / LANCE.length, -1, 1));
-    const baseYaw = -(LANCE.crossYaw + armComp) * L.couch;
+    const baseYaw = Math.max(0, LANCE.crossYaw - armComp) * L.couch;
     const basePitch = LANCE.restPitch * (1 - L.couch);
     const droop = LANCE.fatigueDroop * L.fatigue;
     L.tremor = LANCE.fatigueTremor * L.fatigue * Math.sin(r.tremorPhase + this.t * 2 * Math.PI * 9);
@@ -335,6 +341,9 @@ export class PassSim {
     for (const r of this.riders) {
       const L = r.lance;
       if (r.unseated || L.broken || L.hasHit || L.couch <= 0.55) continue;
+      // once the horses have passed each other the lances come up: a tired tip
+      // trailing along the tilt top is not a snag
+      if (this.crossed) continue;
       const v = this.riders[1 - r.seat];
       const p0 = L.prevTip, p1 = L.tipWorld;
       if (!p0) continue;

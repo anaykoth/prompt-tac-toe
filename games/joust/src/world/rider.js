@@ -71,6 +71,12 @@ export class Rider {
     this.horse = new Horse({ caparison: colour, ...horseSpec });
     this.group.add(this.horse.group);
 
+    // warm follow light so both riders read at night from the far end of the lane
+    this.light = new THREE.PointLight(0xffd9a0, 18, 9, 2);
+    this.light.position.set(0, 3.2, 0);
+    this.horse.group.add(this.light);
+    this.firstPerson = false;
+
     /* ---- puppet, seated ---- */
     this.puppet = new Puppet(puppetSpec);
     this.seatPivot = new THREE.Group();       // rotates the whole rider about the hip
@@ -136,12 +142,17 @@ export class Rider {
 
     /* ---- lance: tapered, striped, vamplate, coronel ---- */
     this.lance = new THREE.Group();
+    const BUTT = 0.5;   // shaft continues behind the couch pivot, under the arm
     const shaft = new THREE.Mesh(
-      geo(new THREE.CylinderGeometry(0.032, 0.075, LANCE.length, 10).rotateX(Math.PI / 2).translate(0, 0, LANCE.length / 2)),
+      geo(new THREE.CylinderGeometry(0.032, 0.075, LANCE.length + BUTT, 10).rotateX(Math.PI / 2)
+        .translate(0, 0, (LANCE.length + BUTT) / 2 - BUTT)),
       wood,
     );
     shaft.castShadow = true;
     this.lance.add(shaft);
+    const buttCap = new THREE.Mesh(geo(new THREE.SphereGeometry(0.08, 10, 8)), steel);
+    buttCap.position.z = -BUTT;
+    this.lance.add(buttCap);
     for (let i = 0; i < 6; i++) {
       const z = 0.45 + i * 0.42;
       const rr = 0.077 - (z / LANCE.length) * 0.046;
@@ -204,6 +215,23 @@ export class Rider {
   }
 
   lookAt(v) { this.puppet.setLook(v); }
+
+  /**
+   * First person: the camera sits at this rider's head, so hide the body and
+   * the worn helm; the horse, lance and shield stay so you see the neck ahead,
+   * the shaft to your right and the shield at the edge of view.
+   */
+  setFirstPerson(on) {
+    this.firstPerson = !!on;
+    this._applyFirstPerson(false);
+  }
+
+  _applyFirstPerson(unseated) {
+    const hide = this.firstPerson && !unseated;
+    this.puppet.group.visible = !hide;
+    // a worn helm hangs off the hidden head; a thrown one is its own object in the group
+    this.helm.visible = !(hide && this._lastHelmState === 'worn');
+  }
 
   /* ---------------- per-frame pose ---------------- */
 
@@ -277,6 +305,7 @@ export class Rider {
       }
       this._lastHelmState = state;
     }
+    this._applyFirstPerson(unseated);
     if (state !== 'worn' && H?.body?.pos) {
       const p = H.body.pos;
       this.helm.position.set(p.x, p.y, p.z);
@@ -392,6 +421,7 @@ export class Rider {
   }
 
   dispose() {
+    if (this.light) { this.light.parent?.remove(this.light); this.light.dispose(); }
     this.horse.dispose();
     this.puppet.dispose();
     if (this._mask) this._mask.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } });
