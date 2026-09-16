@@ -15,7 +15,7 @@ import { Bar, DRINKS } from './game/bar.js';
 import { Walk } from './game/walk.js';
 import { OnlineSession, readToken } from './net/online.js';
 import { LiveLink, SeenSeeds } from './net/live.js';
-import { launchMessage, readLaunch } from './game/replay.js';
+import { launchMessage, readLaunch, resolveThrow } from './game/replay.js';
 import { newSeed } from './game/rng.js';
 import { Cast, CHARACTERS, opponentSpec } from './game/cast.js';
 import { Maker, loadSpec } from './game/maker.js';
@@ -86,6 +86,8 @@ class Game {
     this.dartPool = [];
     this._liveSeeds = new SeenSeeds();
     this._ghostData = null;
+    /** Whose visit the board was last emptied for, so it is not emptied twice. */
+    this._clearedTurn = null;
 
     addEventListener('keydown', (e) => this._key(e));
     addEventListener('keyup', (e) => this._keyUp(e));
@@ -496,21 +498,58 @@ class Game {
     }
     this._syncNames();
 
+    // their remaining score moves dart by dart, not only at the top of the visit
+    if (this._remoteTurn() && match.current === this.theirSeat) {
+      this.hud.nameplate(this._opponentName(), `${match.score[this.theirSeat]} left · ${this._theirState()}`);
+    }
+
     const turnWas = this.match.current;
-    // never yank state out from under a dart that is still resolving — with
-    // the live echo, remote darts can be airborne well before the poll lands
+    // Never yank state out from under a dart that is still resolving or a
+    // result still being shown — with the live echo, remote darts can be
+    // airborne well before the poll lands. Nothing is lost by waiting: the
+    // turn change below is measured against *local* state, so a clear that is
+    // owed is still owed on the next poll, and the settle paths poll the
+    // moment the flight resolves. A rebuild (join / new leg) is a deliberate
+    // reset and always applies.
     const mine = this.flying && !this.flying.remote;
-    if (mine || this.phase === 'flight') return;
+    if (!replayAll && (mine || this.phase === 'flight' || this.phase === 'settle')) return;
+    if (replayAll) { this.flying = null; this.timers.length = 0; }
     this.match.adopt(match);
     this.hud.sync(this.match);
-    if (replayAll || this.match.current !== turnWas) this._beginVisit();
+    if (replayAll || this.match.current !== turnWas) {
+      // The darts come out of the board when the visit that threw them ends —
+      // for the spectator too, or `world.stuck` drifts from the server's
+      // current-visit tips and the next dart deflects off a phantom. The local
+      // thrower already emptied the board on its own way out, and by now the
+      // incoming visit's first dart may already be in it, so don't clear twice.
+      if (replayAll || this._clearedTurn !== turnWas) this._clearDarts(replayAll);
+      this._clearedTurn = null;
+      this._beginVisit();
+    }
   }
 
-  _onNetThrow(t) {
+  _onNetThrow(t, o = {}) {
+    if (o.replayAll) { this._plantThrow(t); return; }
     if (t.seat === this.mySeat) return;      // already flew locally
     // the live echo may have flown this dart seconds ago
     if (!this._liveSeeds.fresh(t.launch?.seed)) return;
     this._remoteThrow(t.seat, t.launch);
+  }
+
+  /**
+   * Rebuild: a dart from the log goes straight into the board — no puppet, no
+   * flight — re-flown headlessly by the same sim the server scored it with, off
+   * the darts already planted, so deflections come out where they did.
+   */
+  _plantThrow(t) {
+    this._liveSeeds.fresh(t.launch?.seed);   // a late echo of it must never fly it again
+    const tips = this.world.stuck.map((d) => [d.tip.x, d.tip.y, d.tip.z]);
+    const res = resolveThrow(t.launch, tips);
+    if (res.type !== 'stick' || res.surface !== 'board') return;
+    const dart = this._spawnDart(ACCENT[t.seat]);
+    dart.remote = t.seat !== this.mySeat;
+    const dir = res.dir ? new THREE.Vector3(...res.dir) : readLaunch(t.launch).vel;
+    dart.plant(new THREE.Vector3(...res.point), dir, this.world);
   }
 
   _onNetError(e) {
@@ -809,6 +848,7 @@ class Game {
       this._after(Math.abs(r.hype) > 0.6 ? 1.25 : 0.9, () => {
         if (this.phase === 'settle') this.phase = this._remoteTurn() ? 'ai' : 'aim';
         this._syncThrowAvailability();
+        this.net?.poll();                    // adopt the server's turn now, not on the next idle tick
       });
       return;
     }
@@ -849,6 +889,17 @@ class Game {
       this._crowdCam(1.75);
       this._after(1.9, () => {
         this._clearDarts();
+        if (this.isOnline) {
+          // the server owns the turn: wait for its state rather than flipping
+          // the local match and having the poll flip it back. The board is
+          // already empty, so note that this turn's clear is done — adopting
+          // the flipped turn must not sweep the next visit's first dart away.
+          this._clearedTurn = outcome.player;
+          this.phase = 'ai';
+          this._syncThrowAvailability();
+          this.net.poll();
+          return;
+        }
         this.match.endVisit();
         this.hud.sync(this.match);
         this._beginVisit();

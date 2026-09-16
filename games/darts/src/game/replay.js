@@ -96,7 +96,7 @@ export function resolveThrow(msg, stuckTips = []) {
           const sc = scoreAt(point.x, point.y - BOARD_HEIGHT);
           return {
             type: 'stick', surface: 'board', score: sc, label: sc.label,
-            value: sc.value, point: [point.x, point.y, point.z], bounced,
+            value: sc.value, point: [point.x, point.y, point.z], dir: [dir.x, dir.y, dir.z], bounced,
           };
         }
         return miss(hit.type === 'robin' ? 'robin' : 'stick', point, bounced, hit.surface);

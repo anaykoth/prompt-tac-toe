@@ -1,4 +1,5 @@
 import { LiveLink as SharedLink, SeenIds, ServerClock } from '../../../shared/net/live.js';
+import { IDLE_INPUT } from '../game/spec.js';
 
 /**
  * TILT ALLEY's live tier: the other rider, on your screen, now.
@@ -10,8 +11,38 @@ import { LiveLink as SharedLink, SeenIds, ServerClock } from '../../../shared/ne
  * duplicated or arrive out of order, and RemoteLog is built to expect that.
  */
 export const CHANNEL = 'tilt-alley-live';
-export const BATCH_TICKS = 3;       // send every 3 ticks (~20 packets/s at 60 Hz)
-export const LAG_TICKS = 6;         // play the remote rider ~100 ms behind
+/**
+ * Six ticks a packet is ten packets a second per rider. The Supabase Free
+ * plan allows 100 Realtime messages a second across the whole project and
+ * disconnects the client above it, so the stream is deliberately kept an
+ * order of magnitude below the ceiling; the sim never depends on a packet
+ * arriving, only on the batch index it carries.
+ */
+export const BATCH_TICKS = 6;
+/** Both browsers start their sim this far after the server's T0 (200 ms). */
+export const LAG_TICKS = 12;
+
+/**
+ * A dense copy of a sparse input log, holes held.
+ *
+ * The shell writes one packed input per FRAME, but the sim can cross several
+ * ticks inside that frame, so the log it leaves behind has a hole wherever a
+ * tick went by without a frame. `PassSim._sampleTick` fills those by holding
+ * the previous raw input; holding it here reproduces exactly what the local
+ * sim ran, which is what the wire and the server must be handed. Pure: `log`
+ * is never touched.
+ */
+export function denseLog(log, upto = log?.length ?? 0) {
+  const n = Math.max(0, Math.floor(Number(upto) || 0));
+  const out = new Array(n);
+  let held = IDLE_INPUT;
+  for (let i = 0; i < n; i++) {
+    const t = log?.[i];
+    if (Array.isArray(t) && t.length === 5) held = t;
+    out[i] = held;
+  }
+  return out;
+}
 
 export class LiveLink {
   constructor({ seat, onTicks = () => {}, onReady = () => {}, onEnded = () => {}, onPresence = () => {} } = {}) {

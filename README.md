@@ -28,7 +28,13 @@ unwell puppets. See [games/darts/README.md](games/darts/README.md).
 `/joust` is the third game: 3D jousting, same puppets, same crowd, same
 deterministic physics discipline. See [games/joust/README.md](games/joust/README.md).
 It is a Vite workspace built into `public/joust/` by `npm run build`, with
-`/api/joust/*` routes and `joust_*` tables (migration 0003).
+`/api/joust/*` routes and `joust_*` tables (migrations 0003 and 0004).
+
+The jousting server has its own suite against a real Postgres. Start the
+throwaway cluster with `npm run test:pg start`, run `npm run test:joust`
+(physics, pass, rules, then the server check), then `npm run test:pg stop`.
+Without that cluster the server check prints SKIPPED and exits 0, so a green
+run that says SKIPPED is not a green server.
 
 
 It is a self-contained static Vite build (three.js, no assets, no backend) that
@@ -44,10 +50,11 @@ tic-tac-toe player token, so seat X is Anay and seat O is Jake. It adds
 shares the same database. It does not touch the tic-tac-toe tables, routes or
 engine.
 
-**Run `npm run migrate` once** to create the darts tables — the migration
-script now applies every file in `supabase/migrations/` in order and is safe to
-re-run. Until then the online option fails gracefully back to the CPU; offline
-darts and tic-tac-toe are unaffected either way.
+**Run `npm run migrate` once** to create the darts and jousting tables — the
+migration script applies every file in `supabase/migrations/` in order (0001
+tic-tac-toe, 0002 darts, 0003 and 0004 jousting) and is safe to re-run. Until
+then the online option fails gracefully back to the CPU; offline darts and
+tic-tac-toe are unaffected either way.
 
 ## Stack
 
@@ -77,4 +84,5 @@ All secrets are Vercel env vars (none in this repo):
 
 - `npm test` — rules-engine tests (plain node, no DB needed).
 - `npm run dev` — local dev server; copy `.env.local` values from Vercel.
-- `npm run migrate` — applies `supabase/migrations/0001_ttt_tables.sql`.
+- `npm run migrate` — applies every file in `supabase/migrations/` in order
+  (0001 through 0004), and is safe to re-run.

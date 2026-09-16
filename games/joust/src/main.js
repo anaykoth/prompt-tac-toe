@@ -19,8 +19,10 @@ import { Hud, eventReaction } from './game/hud.js';
 import { Cpu, KNIGHTS } from './game/cpu.js';
 import { Store } from './game/store.js';
 import {
-  packInput, IMPACT, RIDER, SEAT, TICK, DEFAULT_PASSES, LANE_HALF,
+  packInput, IMPACT, RIDER, SEAT, TICK, DEFAULT_PASSES, LANE_HALF, IDLE_INPUT,
 } from './game/spec.js';
+import { JoustSession, readToken } from './net/online.js';
+import { LiveLink, RemoteLog, denseLog, BATCH_TICKS, LAG_TICKS } from './net/live.js';
 
 const $ = (s) => document.querySelector(s);
 const clamp = THREE.MathUtils.clamp;
@@ -54,6 +56,19 @@ class Game {
 
     this.bar = new Bar();
     this.store = new Store(this.bar);
+
+    /* online: nothing here assumes "me = rider 0" once a seat is dealt */
+    this.mySeat = 0;          // 0 offline; the server decides it from the token
+    this.net = null;          // JoustSession — the authoritative tier
+    this.live = null;         // LiveLink — the tick stream, spectacle only
+    this.theirSpec = null;    // the other seat's puppet, from presence
+    this.theirDrunk = 0;
+    this.liveSeats = new Set();
+    this.armedPass = null;    // the server's armed pass row while we count down
+    this.remote = null;       // RemoteLog for the pass being ridden
+    this.passNo = 0;
+    this._sentTicks = 0;
+    this._countShown = null;
 
     this.timers = [];
     this.tweens = [];
@@ -90,6 +105,20 @@ class Game {
     window.game = this;
   }
 
+  /* ---------------- who is who ---------------- */
+
+  get theirSeat() { return 1 - this.mySeat; }
+  get isOnline() { return !!(this.net && this.net.connected); }
+  /**
+   * Is the pass being ridden an online one? Not the same question as
+   * `isOnline`: one failed fetch drops `connected` for a moment, and a pass
+   * that started against the other seat must not fall back to a CPU that was
+   * never built half way down the lane.
+   */
+  get livePass() { return !!(this.net && this.remote); }
+  /** What we are carrying into the pass, and what the server freezes. */
+  _drunk() { return this.opts.bar ? this.bar.drunk : 0; }
+
   /* ---------------- world ---------------- */
 
   _buildWorld() {
@@ -123,11 +152,18 @@ class Game {
     });
   }
 
+  /**
+   * My seat wears my puppet and my mask; theirs wears the other seat's
+   * presence spec online (it carries the mask they bought) and the CPU
+   * knight otherwise.
+   */
   _makeRider(seat) {
     this.riders[seat]?.dispose?.();
     const knight = KNIGHTS[this._cpuKey()];
-    const spec = seat === 0 ? this.mySpec : knight.spec;
-    const mask = seat === 0 ? this.store.worn : knight.mask;
+    let spec, mask;
+    if (seat === this.mySeat) { spec = this.mySpec; mask = this.store.worn; }
+    else if (this.isOnline && this.theirSpec) { spec = this.theirSpec; mask = this.theirSpec.mask ?? 'none'; }
+    else { spec = knight.spec; mask = knight.mask; }
     this.riders[seat] = new Rider(this.scene, seat, spec, { colour: ACCENT[seat], mask });
   }
 
@@ -135,10 +171,19 @@ class Game {
     return KNIGHTS[this.opts.opponent] ? this.opts.opponent : 'cpu-knight';
   }
 
-  _opponentName() { return KNIGHTS[this._cpuKey()].name; }
+  _opponentName() {
+    if (this.isOnline) {
+      const them = this.net.seats?.find((s) => s.seat === this.theirSeat);
+      return (them?.name || 'THE OTHER SEAT').toUpperCase();
+    }
+    return KNIGHTS[this._cpuKey()].name;
+  }
 
+  /** The scoreboard is by seat index, so seat 0's name goes on the left. */
   _syncNames() {
-    this.hud.setNames(this.mySpec?.name || 'YOU', this._opponentName());
+    const mine = this.mySpec?.name || 'YOU';
+    const theirs = this._opponentName();
+    this.hud.setNames(this.mySeat === 0 ? mine : theirs, this.mySeat === 0 ? theirs : mine);
   }
 
   _openMaker() {
@@ -154,7 +199,7 @@ class Game {
   _finishMaker(spec) {
     this.mySpec = spec;
     this.maker.show(false);
-    this._makeRider(0);
+    this._makeRider(this.mySeat);
     for (const r of this.riders) if (r?.group) r.group.visible = true;
     this._syncNames();
     this.phase = 'intro';
@@ -221,8 +266,8 @@ class Game {
    * Mouse aim nudges the look point so the view leads the lance.
    */
   _applyChaseCam() {
-    const s = SEAT[0];
-    const r = this.sim?.riders?.[0];
+    const s = SEAT[this.mySeat];
+    const r = this.sim?.riders?.[this.mySeat];
     const z = r?.horse?.z ?? s.startZ;
     const x = r?.horse?.x ?? s.laneX;
     const y = (r?.horse?.bobY ?? 0);
@@ -367,12 +412,7 @@ class Game {
     };
     bind('#opt-passes', 'passes', () => this._restart());
     bind('#opt-unhorse', 'unhorse', () => this._restart());
-    bind('#opt-opponent', 'opponent', (v) => {
-      if (v === 'online') { this._goOnline(); return; }
-      this._makeRider(1);
-      this._syncNames();
-      this._restart();
-    });
+    bind('#opt-opponent', 'opponent', () => this._applyOpponent());
     bind('#opt-crowd', 'crowd', (v) => this._makeCrowd(v));
     bind('#opt-sens', 'sens');
     bind('#opt-sound', 'sound', (v) => { this.audio.enabled = v; });
@@ -446,22 +486,227 @@ class Game {
 
   _wearMask(key) {
     if (!this.store.wear(key)) return;
-    this.riders[0]?.setMask?.(key);
+    this.riders[this.mySeat]?.setMask?.(key);
     this.audio.click();
     this.hud.toast(MASKS[key]?.label ?? 'MASK', 'THE ARMOURER APPROVES', 'var(--gold)');
     this._refreshBar();
   }
 
-  /* ---------------- online (later) ---------------- */
+  /* ---------------- online ---------------- */
 
-  _goOnline() {
-    this.hud.toast('ONLINE COMES NEXT', 'RIDING THE KNIGHT INSTEAD', 'var(--dim)');
-    this.opts.opponent = 'cpu-knight';
+  /** The darts word ladder, for the other rider's condition. */
+  _theirState() {
+    const d = this.theirDrunk ?? 0;
+    if (d < 0.05) return 'sober';
+    if (d < 0.22) return 'loose';
+    if (d < 0.45) return 'merry';
+    if (d < 0.70) return 'wobbly';
+    if (d < 0.90) return 'gone';
+    return 'horizontal';
+  }
+
+  _setOpponentSelect(v) {
+    this.opts.opponent = v;
     const sel = $('#opt-opponent');
-    if (sel) sel.value = 'cpu-knight';
+    if (sel) sel.value = v;
+    this._applyOpponent();
+  }
+
+  _applyOpponent() {
+    if (this.opts.opponent === 'online') { this._goOnline(); return; }
+    if (this.net || this.live) this._goOffline();
+    else { this._makeRider(this.theirSeat); this._syncNames(); }
+    this._restart();
+  }
+
+  /**
+   * Take a seat. The token decides which one, so every "me = rider 0"
+   * assumption in the shell reads `mySeat` from here on. The authoritative
+   * session (join / ready / trace / poll) and the live tick stream come up
+   * together; the stream is spectacle, the session is the verdict.
+   */
+  async _goOnline() {
+    const token = readToken();
+    if (!token) {
+      this.hud.toast('NO TOKEN', 'OPEN YOUR PLAYER LINK FIRST', 'var(--hot)');
+      this._setOpponentSelect('cpu-knight');
+      return;
+    }
+    this.net?.stop();
+    this.live?.stop();
+    this.net = new JoustSession({
+      token,
+      onState: (v) => this._onNetState(v),
+      onPassArmed: (p) => this._onPassArmed(p),
+      onPassResolved: (row, o) => this._onPassResolved(row, o),
+      onError: (e) => this._onNetError(e),
+    });
+    this.hud.toast('CONNECTING', 'FINDING THE OTHER SEAT', 'var(--dim)');
+
+    const r = await this.net.join({ ...this.mySpec, mask: this.store.worn }, { drunk: this._drunk() });
+    if (!r) {
+      this.net.stop();
+      this.net = null;
+      this._setOpponentSelect('cpu-knight');
+      return;
+    }
+    this.mySeat = r.seat;
+    this.armedPass = null;
+    this.remote = null;
+
+    this.live = new LiveLink({
+      seat: r.seat,
+      onTicks: (p) => this._onLiveTicks(p),
+      onPresence: (s) => this._onLivePresence(s),
+    });
+    this.live.connect();
+
+    this._makeRider(0);
+    this._makeRider(1);
+    if (this.net.match) this.match.adopt(this.net.match);
+    this.hud.sync(this.match, null);
+    this._syncNames();
+    this.hud.toast('CONNECTED', `YOU ARE ${(r.name || '').toUpperCase()}`, 'var(--green)');
+    this._rideCam(true);
+
+    // mid-match switch: ride at once. From the title card, the START button does it.
+    if (this.hud.els.intro.classList.contains('gone')) this._restart();
+  }
+
+  _goOffline() {
+    this.net?.stop();
+    this.net = null;
+    this.live?.stop();
+    this.live = null;
+    this.mySeat = 0;
+    this.theirSpec = null;
+    this.theirDrunk = 0;
+    this.armedPass = null;
+    this.remote = null;
+    this.liveSeats = new Set();
+    this.hud.presence(false, null);
+    this._makeRider(0);
     this._makeRider(1);
     this._syncNames();
-    this._restart();
+  }
+
+  /* ---------------- online: the session ---------------- */
+
+  _onNetState(v) {
+    if (!this.net) return;
+    const them = v?.seats?.find((s) => s.seat === this.theirSeat);
+    if (them) {
+      this.theirDrunk = them.drunk ?? 0;
+      const spec = them.spec ?? null;
+      if (spec && (spec.name !== this.theirSpec?.name || spec.mask !== this.theirSpec?.mask)) {
+        this.theirSpec = spec;
+        if (this.phase !== 'pass') this._makeRider(this.theirSeat);
+      }
+      this.hud.presence(
+        !!(them.online || this.liveSeats?.has(this.theirSeat)),
+        (them.name || '').toUpperCase(),
+        this._theirState(),
+      );
+    }
+    this._syncNames();
+
+    // a pass armed while we were still settling the last one is announced
+    // once and only once by the session: pick it up here or sit out the ride
+    if (this.phase === 'ready' && !this.armedPass && v?.open) this._onPassArmed(v.open);
+
+    // never yank the match out from under a pass being ridden or judged
+    if (v?.match && this.phase !== 'pass' && this.phase !== 'awaiting') {
+      this.match.adopt(v.match);
+      this.hud.sync(this.match, null);
+    }
+  }
+
+  /** Both seats are in the saddle: the server picked the seed and the instant. */
+  _onPassArmed(pass) {
+    if (this.phase !== 'ready' || !pass) return;
+    this.armedPass = pass;
+    this._countShown = null;
+    this.audio.bell();
+    this.hud.toast('BOTH IN THE SADDLE', 'THE HERALD RAISES THE CLOTH', 'var(--gold)');
+  }
+
+  /**
+   * The herald's verdict. The server re-ran both logs, so it wins over the
+   * local preview — which can differ when their ticks arrived late.
+   */
+  _onPassResolved(row, o = {}) {
+    if (!this.net || !row) return;
+    if (o.replayAll || row.pass_no !== this.passNo) {
+      if (this.net.match && this.phase !== 'pass') {
+        this.match.adopt(this.net.match);
+        this.hud.sync(this.match, null);
+      }
+      return;
+    }
+    // the server defaulted our log because we were too slow: stop riding
+    if (this.phase === 'pass') {
+      if (this.sim) this.sim.done = true;
+      this._settle(true);
+    }
+
+    const before = [this.match.score[0], this.match.score[1]];
+    if (this.net.match) this.match.adopt(this.net.match);
+    this.hud.setLast(this.match.score[0] - before[0], this.match.score[1] - before[1]);
+    this.hud.sync(this.match, null);
+    this._refreshBar();
+
+    const served = row.result?.score;
+    const local = this.sim?.result?.()?.score;
+    if (served && local && (served[0] !== local[0] || served[1] !== local[1])) {
+      const sum = passSummary(row.result);
+      this.hud.toast(sum.big, "THE HERALD'S CALL", sum.hype > 0.6 ? 'var(--gold)' : 'var(--ink)');
+    }
+    this.hud.nameplate(null);
+    this._after(1.6, () => {
+      if (this.match.finished) this._over(this.match.winner);
+      else this._ready();
+    });
+  }
+
+  _onNetError(e) {
+    if (e === 'conflict') return;                 // the poll will sort it out
+    this.hud.toast('THE HERALD BALKS', String(e).toUpperCase().replace(/-/g, ' '), 'var(--hot)');
+  }
+
+  /* ---------------- online: the live stream ---------------- */
+
+  _onLiveTicks(p) {
+    if (!p || p.seat !== this.theirSeat) return;
+    if (this.remote && p.pass === this.passNo) this.remote.add(p);
+  }
+
+  _onLivePresence(seats) {
+    this.liveSeats = seats ?? new Set();
+    const them = this.net?.seats?.find((s) => s.seat === this.theirSeat);
+    if (!them) return;
+    this.hud.presence(
+      this.liveSeats.has(this.theirSeat) || them.online,
+      (them.name || '').toUpperCase(),
+      this._theirState(),
+    );
+  }
+
+  /**
+   * Push our own ticks out in batches. The sim can cross several ticks in one
+   * frame while only the first was written, so the holes are held first —
+   * exactly what the sim itself did — and the batch is dense by construction.
+   */
+  _streamTicks(force = false) {
+    const sim = this.sim;
+    if (!sim || !this.live || !this.livePass) return;
+    const log = (sim.logs[this.mySeat] ||= []);
+    const upto = sim.tick | 0;
+    if (upto <= this._sentTicks) return;
+    const dense = denseLog(log, upto);
+    for (let i = this._sentTicks; i < upto; i++) log[i] = dense[i];
+    if (!force && upto - this._sentTicks < BATCH_TICKS) return;
+    this.live.sendTicks(this.passNo, this._sentTicks, log.slice(this._sentTicks, upto));
+    this._sentTicks = upto;
   }
 
   /* ---------------- match flow ---------------- */
@@ -480,12 +725,32 @@ class Game {
     this.tweens.length = 0;
     this.timeScale = 1;
     this.slowUntil = 0;
-    this.match = new Match({ passes: this.opts.passes, toUnhorsing: this.opts.unhorse });
+    this.armedPass = null;
     this.bar.reset();
     this.hud.setLast(null, null);
-    this.hud.sync(this.match, null);
     this.hud.els.intro.classList.add('gone');
+    if (this.isOnline) { this._restartOnline(); return; }
+    this.match = new Match({ passes: this.opts.passes, toUnhorsing: this.opts.unhorse });
+    this.hud.sync(this.match, null);
     this._refreshBar();
+    this._ready();
+  }
+
+  /**
+   * Online there is no local match to make: the server owns it. Rejoining is
+   * how we ask for a new one, and only once the old one is actually over.
+   */
+  async _restartOnline() {
+    this._refreshBar();
+    const r = await this.net.join(
+      { ...this.mySpec, mask: this.store.worn },
+      { newMatch: this.match.finished, drunk: this._drunk() },
+    );
+    if (!r) return;
+    this.mySeat = r.seat;
+    if (this.net.match) this.match.adopt(this.net.match);
+    this.hud.sync(this.match, null);
+    this._syncNames();
     this._ready();
   }
 
@@ -503,6 +768,19 @@ class Game {
     this.hud.showBalance(false);
     this.hud.showReticle(false);
     this._rideCam(true);
+
+    /**
+     * Online the countdown is not ours to run: the pass arms when the other
+     * seat is also in the saddle, and `_frame` counts down to the server's
+     * own start instant on the shared clock.
+     */
+    if (this.isOnline) {
+      this.armedPass = null;
+      this._countShown = null;
+      this.hud.toast('IN THE SADDLE', `WAITING FOR ${this._opponentName()}`, 'var(--dim)');
+      this.net.ready(this._drunk());
+      return;
+    }
 
     let count = 3;
     const beat = () => {
@@ -522,6 +800,33 @@ class Game {
     this._after(0.7, beat);
   }
 
+  /**
+   * The online 3-2-1, read off the shared clock rather than a local timer.
+   *
+   * Both browsers start their sim LAG_TICKS after the server's T0, so the
+   * first ticks of the other rider have had time to arrive before either
+   * horse moves. The server's own lagTicks wins if it sent one.
+   */
+  _countdown() {
+    if (!this.net || !this.armedPass) return;
+    const lag = this.net.timing?.lagTicks ?? LAG_TICKS;
+    const s = this.net.clock.until(this.armedPass.starts_at) + lag * TICK;
+    if (s > 0) {
+      const c = Math.ceil(s);
+      if (c <= 3 && c >= 1 && c !== this._countShown) {
+        this._countShown = c;
+        this.audio.bell();
+        this.hud.toast(String(c), c === 3 ? 'TO YOUR MARKS' : '', 'var(--gold)');
+      }
+      return;
+    }
+    this._countShown = null;
+    this.audio.bell();
+    this.hud.toast('RIDE', 'THE HERALD DROPS THE CLOTH', 'var(--gold)');
+    this.crowd.react(0.8, 0.8);
+    this._beginPass();
+  }
+
   _beginPass() {
     this.phase = 'pass';
     this.hud.nameplate(null);
@@ -529,16 +834,28 @@ class Game {
     this.hud.showBalance(true);
     this.hud.showReticle(true);
 
-    const seed = newPassSeed ? newPassSeed() : newSeed();
+    // online: the seed and both riders' frozen drunk levels come from the
+    // armed pass, so the two browsers and the server ride the same pass
+    const armed = this.isOnline ? this.armedPass : null;
+    const seed = armed ? armed.seed : (newPassSeed ? newPassSeed() : newSeed());
     this.passSeed = seed;
+    const mine = { drunk: this._drunk() };
     this.sim = new PassSim({
       seed,
-      riders: [
-        { drunk: this.opts.bar ? this.bar.drunk : 0 },
-        { drunk: 0 },
-      ],
+      riders: armed
+        ? [{ drunk: armed.riders?.[0]?.drunk ?? 0 }, { drunk: armed.riders?.[1]?.drunk ?? 0 }]
+        : (this.mySeat === 0 ? [mine, { drunk: 0 }] : [{ drunk: 0 }, mine]),
     });
-    this.cpu = new Cpu(this._cpuKey(), mulberry32((seed ^ 0x9e3779b9) >>> 0));
+    if (armed) {
+      this.passNo = armed.pass_no;
+      this.remote = new RemoteLog(this.passNo);
+      this._sentTicks = 0;
+      this.cpu = null;
+      this.live?.sendReady(this.passNo);
+    } else {
+      this.remote = null;
+      this.cpu = new Cpu(this._cpuKey(), mulberry32((seed ^ 0x9e3779b9) >>> 0));
+    }
     this.evCursor = 0;
     this.impactDone = false;
     this.input.couch = false;
@@ -548,19 +865,37 @@ class Game {
     this.audio.whoosh();
   }
 
-  /** The pass is over: score it, show it, then set up the next one. */
-  _settle() {
-    if (this.phase === 'settle' || this.phase === 'over') return;
-    this.phase = 'settle';
+  /**
+   * The pass is over: score it, show it, then set up the next one.
+   *
+   * Online, everything shown here is a PREVIEW — the local sim rode the other
+   * rider off a stream that may have stuttered. The log goes to the server and
+   * the phase parks on 'awaiting' until the herald answers.
+   * @param {boolean} quiet  the verdict already landed; skip the fanfare
+   */
+  _settle(quiet = false) {
+    if (this.phase === 'settle' || this.phase === 'awaiting' || this.phase === 'over') return;
+    const online = this.livePass;
+    this.phase = online ? 'awaiting' : 'settle';
     this.timeScale = 1;
     this.hud.showCouch(false);
     this.hud.showReticle(false);
+    if (quiet) return;
 
     const sum = passSummary?.(this.sim) ?? { big: 'PASS', small: '', hype: 0.2 };
     this.hud.toast(sum.big, sum.small, sum.hype > 0.6 ? 'var(--gold)' : 'var(--ink)');
     this.crowd.react(sum.hype ?? 0.2, 0.6);
     if ((sum.hype ?? 0) > 0.7) this.crowd.burstConfetti(160);
     this._crowdCam(1.9);
+
+    if (online) {
+      this._streamTicks(true);
+      const log = denseLog(this.sim.logs[this.mySeat] ?? [], Math.max(1, this.sim.tick | 0));
+      this.live?.sendEnded(this.passNo, log.length);
+      this.net.submitTrace(this.passNo, log, this._drunk());
+      this.hud.nameplate('THE HERALD CONFERS', `WAITING ON ${this._opponentName()}`);
+      return;
+    }
 
     const before = [this.match.score[0], this.match.score[1]];
     const res = this.match.applyPass(this.sim) ?? {};
@@ -584,9 +919,11 @@ class Game {
     this.crowd.react(1.4, 1);
     this.crowd.burstConfetti(340);
     this.audio.roar(1);
-    const name = winner === 0 ? 'YOU' : winner === 1 ? this._opponentName() : 'NOBODY';
-    if (this.riders[0]) this.riders[0].hype = winner === 0 ? 1.5 : -1.2;
-    if (this.riders[1]) this.riders[1].hype = winner === 1 ? 1.5 : -1.2;
+    const name = winner === this.mySeat ? 'YOU'
+      : winner === this.theirSeat ? this._opponentName() : 'NOBODY';
+    const me = this.riders[this.mySeat], them = this.riders[this.theirSeat];
+    if (me) me.hype = winner === this.mySeat ? 1.5 : -1.2;
+    if (them) them.hype = winner === this.theirSeat ? 1.5 : -1.2;
     this.hud.showWin(name, this.match.score, () => this._start(), this.bar);
   }
 
@@ -608,9 +945,15 @@ class Game {
     this._fling = false;
 
     const t = sim.tick | 0;
-    (sim.logs[0] ||= [])[t] = packed;
-    (sim.logs[1] ||= [])[t] = this.cpu.input(sim, 1);
+    (sim.logs[this.mySeat] ||= [])[t] = packed;
+    const theirs = (sim.logs[this.theirSeat] ||= []);
+    // online the other rider is driven by their own ticks off the wire, held
+    // across any gap; offline by the knight
+    theirs[t] = this.remote
+      ? this.remote.at(t)
+      : (this.cpu ? this.cpu.input(sim, this.theirSeat) : IDLE_INPUT);
     sim.step(dt);
+    this._streamTicks(sim.done);
 
     this._consumeEvents();
     if (sim.done) this._settle();
@@ -647,7 +990,7 @@ class Game {
     }
 
     // the bar takes its cut of anything that scored
-    if (this.opts.bar && ev.seat === 0 && ev.points > 0) {
+    if (this.opts.bar && ev.seat === this.mySeat && ev.points > 0) {
       const gained = Math.round(ev.points * this.bar.multiplier);
       this.bar.points += gained;
       this.bar.earned += gained;
@@ -725,6 +1068,7 @@ class Game {
     if ((this._barTick = (this._barTick | 0) + 1) % 8 === 0) this._refreshBar();
 
     if (this.phase === 'pass') this._stepSim(dt);
+    else if (this.phase === 'ready' && this.armedPass) this._countdown();
 
     // riders
     const rs = this.sim?.riders;
@@ -737,7 +1081,7 @@ class Game {
     this.maker.update(real, this.time);
 
     // HUD from the live sim
-    const me = rs?.[0];
+    const me = rs?.[this.mySeat];
     if (me) {
       if (this.phase === 'pass') {
         this.hud.couch(me.lance?.couch ?? 0, me.lance?.fatigue ?? 0);
