@@ -38,7 +38,12 @@ export class JoustSession {
       state() {}, presence() {}, armed() {}, charge() {}, rider() {}, contact() {}, result() {}, over() {}, error() {},
     }, opts.on ?? {});
     this._fetch = opts.fetchFn ?? ((...a) => fetch(...a));
-    this._timers = opts.timers ?? { setTimeout, clearTimeout, setInterval, clearInterval };
+    // browsers throw "Illegal invocation" when their timer functions are called
+    // through another object, so these are wrappers, never bare references
+    this._timers = opts.timers ?? {
+      setTimeout: (f, ms) => globalThis.setTimeout(f, ms), clearTimeout: (t) => globalThis.clearTimeout(t),
+      setInterval: (f, ms) => globalThis.setInterval(f, ms), clearInterval: (t) => globalThis.clearInterval(t),
+    };
     this._liveFactory = opts.liveFactory ?? ((o) => new LiveLink({ channel: CHANNEL, ...o }));
     this.clock = new ServerClock({ nowFn: opts.nowFn });
 
