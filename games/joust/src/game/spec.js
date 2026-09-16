@@ -74,7 +74,7 @@ export const LANCE = {
   aimRangePitch: 0.30,        // rad, mouse full deflection in pitch
   armSpring: 34.0,            // spring-damper: tip follows the command with lag
   armDamp: 7.5,
-  fatigueDroop: 0.11,         // rad of droop per second couched
+  fatigueDroop: 0.045,        // rad of droop per second couched (0.11 made a 2 s couch physically unable to reach the shield)
   fatigueTremor: 0.035,       // rad of tremor amplitude per second couched
   breakEnergy: 62,            // kg m/s of axial impulse to shatter the tip
   tipR: 0.05,                 // sweep radius for the tip

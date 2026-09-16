@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview --host",
-    "test": "node test/physcheck.mjs && node test/passcheck.mjs && node test/rulescheck.mjs"
+    "test": "node test/physcheck.mjs && node test/passcheck.mjs && node test/rulescheck.mjs && node test/servercheck.mjs"
   },
   "dependencies": {
     "@supabase/realtime-js": "^2.19.0",
