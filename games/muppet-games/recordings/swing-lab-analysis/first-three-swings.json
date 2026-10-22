@@ -1,0 +1,90 @@
+{
+  "source": "recordings/swing-lab/XHRYR2-dbb2210a-4b87-46f1-8b75-57fb1cb9a127.json",
+  "sourceSha256": "48bbdbe342abb2f3f3b6d8e28d8d3b22706e016b1358ba0d8b374c90f8c28abe",
+  "recordedAt": "2026-10-15T20:43:42.716Z",
+  "durationMs": 12000,
+  "sampleCount": 716,
+  "metrics": {
+    "peak": 847.1723427209979,
+    "peakAt": 5004,
+    "hz": 58.8235294117647,
+    "maxGap": 165.99999999998545,
+    "validRates": 716,
+    "recognized": 0
+  },
+  "events": [],
+  "userConfirmedIntent": "The third swing was deliberately gentler.",
+  "method": "Three review windows identified in the raw trace using the user-confirmed count. All three show a negative gamma backswing followed by a positive gamma return. These are review segments, not automatic live detections.",
+  "quality": {
+    "allRateAndOrientationSamplesPresent": true,
+    "gapsOver40ms": [
+      {
+        "endsAtMs": 11853,
+        "durationMs": 165.99999999998545
+      }
+    ],
+    "duplicateTimestamps": 4
+  },
+  "limitations": [
+    "No grip button events were recorded; game power uses simulated presses/releases, not actual shots.",
+    "The first swing is already in motion when recording begins.",
+    "Phone angular speed is not clubhead speed; the phone hand path is not reconstructed.",
+    "This take supports recognition testing, not a general swing calibration from only three examples."
+  ],
+  "swings": [
+    {
+      "swing": 1,
+      "reviewWindowMs": [
+        0,
+        3500
+      ],
+      "rotationPeakDegreesPerSecond": 753.228350985893,
+      "rotationPeakAtMs": 1171,
+      "accelerationPeakMetresPerSecondSquared": 56.426778706537036,
+      "hypotheticalGrip": {
+        "pressAtMs": 0,
+        "releaseAtMs": 1750,
+        "axis": 2,
+        "sign": -1,
+        "recognized": true,
+        "power": 0.9798455193823812
+      }
+    },
+    {
+      "swing": 2,
+      "reviewWindowMs": [
+        3500,
+        7000
+      ],
+      "rotationPeakDegreesPerSecond": 847.1723427209979,
+      "rotationPeakAtMs": 5004,
+      "accelerationPeakMetresPerSecondSquared": 60.99607586707749,
+      "hypotheticalGrip": {
+        "pressAtMs": 3500,
+        "releaseAtMs": 5600,
+        "axis": 2,
+        "sign": -1,
+        "recognized": true,
+        "power": 1
+      }
+    },
+    {
+      "swing": 3,
+      "reviewWindowMs": [
+        7000,
+        9500
+      ],
+      "rotationPeakDegreesPerSecond": 430.3705596445015,
+      "rotationPeakAtMs": 8220,
+      "accelerationPeakMetresPerSecondSquared": 22.19454701828921,
+      "hypotheticalGrip": {
+        "pressAtMs": 7000,
+        "releaseAtMs": 8650,
+        "axis": 2,
+        "sign": -1,
+        "recognized": true,
+        "power": 0.5539375359205305
+      }
+    }
+  ]
+}

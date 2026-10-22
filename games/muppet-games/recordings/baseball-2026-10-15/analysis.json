@@ -1,0 +1,273 @@
+{
+  "source": "takes-02-06.json",
+  "ignoredOriginalTakeNumbers": [
+    1
+  ],
+  "coordinateConvention": "Browser mouse deltas: +x right, +y down; pixels and milliseconds. These are not physical distances or bat angles.",
+  "takes": [
+    {
+      "originalTakeNumber": 2,
+      "id": "1792085083883-opxxq5",
+      "label": "Full swing",
+      "interpretation": "The annotations identify forward pose, draw-back, swing, then follow-through. Mouse movement stays meaningful throughout; no mouse button is held.",
+      "userNotes": "",
+      "markers": [
+        {
+          "id": "1792085123252-azong",
+          "t": 0,
+          "label": "bat pointed forward."
+        },
+        {
+          "id": "1792085137540-q5fi8",
+          "t": 1914.231,
+          "label": "pulled bat back."
+        },
+        {
+          "id": "1792085147489-uukku",
+          "t": 2156.88,
+          "label": "swing"
+        },
+        {
+          "id": "1792085157241-pudwd",
+          "t": 2273.711,
+          "label": "follow through."
+        }
+      ],
+      "largestContiguousLeftwardMotion": {
+        "startMs": 1918,
+        "endMs": 2151,
+        "deltaX": -3072,
+        "deltaY": -281
+      },
+      "metrics": {
+        "distance": 4490.039349875862,
+        "peakSpeed": 29379.83662309918,
+        "minX": -2354,
+        "maxX": 718,
+        "minY": -133,
+        "maxY": 261
+      },
+      "events": []
+    },
+    {
+      "originalTakeNumber": 3,
+      "id": "1792085169592-dhlhd8",
+      "label": "Full swing with extra backswing",
+      "interpretation": "The annotations separate bringing the bat back from a further backswing before the rapid leftward sweep. No mouse button is held.",
+      "userNotes": "",
+      "markers": [
+        {
+          "id": "1792085192730-nnimn",
+          "t": 1962.094,
+          "label": "pulled bat back"
+        },
+        {
+          "id": "1792085205583-21zyt",
+          "t": 2969.129,
+          "label": "backswing"
+        },
+        {
+          "id": "1792085214824-5dmh4",
+          "t": 3099.069,
+          "label": "swing"
+        },
+        {
+          "id": "1792085224145-3q8hb",
+          "t": 3196.524,
+          "label": "follow through"
+        }
+      ],
+      "largestContiguousLeftwardMotion": {
+        "startMs": 2968,
+        "endMs": 3118,
+        "deltaX": -2768,
+        "deltaY": -193
+      },
+      "metrics": {
+        "distance": 3798.391087286697,
+        "peakSpeed": 30532.822139799548,
+        "minX": -1886,
+        "maxX": 882,
+        "minY": -79,
+        "maxY": 194
+      },
+      "events": []
+    },
+    {
+      "originalTakeNumber": 4,
+      "id": "1792085236780-etie8u",
+      "label": "Open face",
+      "interpretation": "The user explicitly says the bat is more open and should send the ball right. The fast leftward path trends down on screen, unlike the normal swings, which trend up. The intended axis-to-pose mapping still needs a visible playable calibration.",
+      "userNotes": "this one the bat was opened more, open face would lead the ball to be hit to the right\n",
+      "markers": [
+        {
+          "id": "1792085284760-t0ojw",
+          "t": 2318.715,
+          "label": "brought bat back"
+        },
+        {
+          "id": "1792085291556-dizal",
+          "t": 2662.95,
+          "label": "backswing"
+        },
+        {
+          "id": "1792085299035-srp0k",
+          "t": 2994.195,
+          "label": "swing"
+        }
+      ],
+      "largestContiguousLeftwardMotion": {
+        "startMs": 2718,
+        "endMs": 3019,
+        "deltaX": -1870,
+        "deltaY": 182
+      },
+      "metrics": {
+        "distance": 2438.923692109875,
+        "peakSpeed": 19486.25156361382,
+        "minX": -1483,
+        "maxX": 387,
+        "minY": 0,
+        "maxY": 419
+      },
+      "events": []
+    },
+    {
+      "originalTakeNumber": 5,
+      "id": "1792085309480-i6ad5i",
+      "label": "Bunt",
+      "interpretation": "The user explicitly labels opening the bat face and a light forward push. The hand settles with the bat presented, makes small corrections, and makes a short, gentle motion; this must permit contact without a full swing.",
+      "userNotes": "bunt. opened bat face and light push forward.\n",
+      "markers": [
+        {
+          "id": "1792085351806-efs5u",
+          "t": 715.221,
+          "label": "brought bat to zone"
+        },
+        {
+          "id": "1792085362595-ucwc3",
+          "t": 2096.759,
+          "label": "moved bat a bit"
+        },
+        {
+          "id": "1792085375320-ztfjn",
+          "t": 2591.912,
+          "label": "pushed bat forward towards ball."
+        }
+      ],
+      "largestContiguousLeftwardMotion": {
+        "startMs": 2468,
+        "endMs": 2652,
+        "deltaX": -119,
+        "deltaY": 6
+      },
+      "metrics": {
+        "distance": 641.9924308755797,
+        "peakSpeed": 1864.296113818832,
+        "minX": 0,
+        "maxX": 439,
+        "minY": 0,
+        "maxY": 74
+      },
+      "events": []
+    },
+    {
+      "originalTakeNumber": 6,
+      "id": "1792085394639-7k0m14",
+      "label": "Lower bat during swing",
+      "interpretation": "The user explicitly labels right mouse as lowering the bat mid-swing. The right button is held from 3629 to 3829 ms, overlapping the fast leftward sweep. The later Digit8 event has no stated baseball meaning.",
+      "userNotes": "this time right mouse click was to move bat down mid swing.\n",
+      "markers": [],
+      "largestContiguousLeftwardMotion": {
+        "startMs": 3568,
+        "endMs": 3746,
+        "deltaX": -3867,
+        "deltaY": -275
+      },
+      "metrics": {
+        "distance": 4745.524180013806,
+        "peakSpeed": 45941.35693080899,
+        "minX": -3239,
+        "maxX": 628,
+        "minY": -115,
+        "maxY": 201
+      },
+      "events": [
+        {
+          "t": 3629,
+          "kind": "button-down",
+          "value": {
+            "button": 2,
+            "buttons": 2,
+            "modifiers": {
+              "alt": false,
+              "ctrl": false,
+              "shift": false,
+              "meta": false
+            }
+          }
+        },
+        {
+          "t": 3829.000000000058,
+          "kind": "button-up",
+          "value": {
+            "button": 2,
+            "buttons": 0,
+            "modifiers": {
+              "alt": false,
+              "ctrl": false,
+              "shift": false,
+              "meta": false
+            }
+          }
+        },
+        {
+          "t": 6765,
+          "kind": "key-down",
+          "value": {
+            "code": "Digit8",
+            "key": "8",
+            "location": 0,
+            "repeat": false,
+            "modifiers": {
+              "alt": false,
+              "ctrl": false,
+              "shift": false,
+              "meta": false
+            }
+          }
+        },
+        {
+          "t": 6839,
+          "kind": "key-up",
+          "value": {
+            "code": "Digit8",
+            "key": "8",
+            "location": 0,
+            "repeat": false,
+            "modifiers": {
+              "alt": false,
+              "ctrl": false,
+              "shift": false,
+              "meta": false
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "controlRequirementsFromUserExamples": [
+    "Keep the mouse continuously connected to bat pose during setup, draw-back, swing, and follow-through.",
+    "Allow a swing with no mouse button held. Use left/right mouse for independent height adjustments, per user instructions.",
+    "Determine contact from the actual bat pose and its velocity at impact, including slow stationary or pushed bunt contact.",
+    "Preserve an open-face action that can direct the ball right. Show the mapping and make it adjustable.",
+    "Keep right-button height adjustment active during the swing, independent of horizontal movement."
+  ],
+  "existingImplementationMismatch": [
+    "BatGesture triggers a fixed-duration sweep after 20 pixels left and a velocity threshold; subsequent mouse movement no longer controls the bat.",
+    "The game currently requires holding left mouse to swing and ignores right mouse for bat height.",
+    "The swing input clamps to 3500 px/s; recorded full swings exceed that range substantially, collapsing their speed differences.",
+    "The model only checks for contact during an automatic swing, so presented-bat bunts are impossible."
+  ],
+  "mappingUncertainty": "Recordings establish mouse trajectory, event timing, and the user's intended phases. They do not directly measure a 3D bat pose; forward/back mouse travel must be calibrated visibly before treating it as a fixed amount of bat-face rotation or reach."
+}

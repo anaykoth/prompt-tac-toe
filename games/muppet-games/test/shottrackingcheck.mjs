@@ -1,0 +1,52 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { WebSocket } from 'ws';
+import { createPhoneServer } from '../server/phone.js';
+import { captureAddress } from '../src/phone/address.js';
+import { ShotCapture } from '../src/phone/shot-capture.js';
+import { validateShotEvent, summarizeShots, shotFlags } from '../src/golf/shot-data.js';
+import { demoSwing } from '../src/phone/swing-analysis.js';
+import { GolfRound, stepBall } from '../src/golf/model.js';
+const fixture=JSON.parse(fs.readFileSync(new URL('../recordings/swing-lab/XHRYR2-dbb2210a-4b87-46f1-8b75-57fb1cb9a127.json',import.meta.url))).takes[0];
+const queued=[],capture=new ShotCapture({enqueue:e=>queued.push(e)}),context={testSwing:true,club:'driver',mode:'course',aim:0,calibration:fixture.calibration,address:captureAddress(Object.fromEntries(['alpha','beta','gamma'].map((k,i)=>[k,fixture.samples[0].orientation[i]])),fixture.calibration)};
+capture.begin(0,context);
+for(const s of fixture.samples)capture.sample({rotationRate:Object.fromEntries(['alpha','beta','gamma'].map((k,i)=>[k,s.rate[i]])),acceleration:Object.fromEntries(['x','y','z'].map((k,i)=>[k,s.acceleration[i]]))},Object.fromEntries(['alpha','beta','gamma'].map((k,i)=>[k,s.orientation[i]])),s.t);
+const analysis={...demoSwing(.6),source:'phone'},shot={power:.6,curve:0,analysis},id=capture.finish('recognized',12000,shot),attempt=queued[0];
+assert.equal(attempt.data.testSwing,true);assert.equal(validateShotEvent({...attempt,data:{...attempt.data,testSwing:'yes'}}),false);
+assert.equal(capture.finish('cancelled',12100),null);assert.ok(validateShotEvent(attempt));assert.equal(attempt.id,id);assert.equal(attempt.data.samples.length,fixture.samples.length);assert.notEqual(attempt.data.calibration,fixture.calibration);
+capture.begin(0,context);for(let t=0;t<=30000;t+=10)capture.sample({rotationRate:{alpha:1,beta:2,gamma:3}},null,t);capture.finish('released-early',30000);
+assert.ok(validateShotEvent(queued[1]));assert.equal(queued[1].data.samples.length,900);assert.ok(queued[1].data.offsetMs>20000);assert.ok(queued[1].data.dropped>0);
+assert.equal(validateShotEvent({...attempt,id:'../escape'}),false);assert.equal(validateShotEvent({...attempt,data:{...attempt.data,samples:Array(901).fill(attempt.data.samples[0])}}),false);
+const directory=fs.mkdtempSync(path.join(os.tmpdir(),'golf-shot-tests-')),server=createPhoneServer({port:0,shotDirectory:directory});const {port}=await server.listen(),root=`http://127.0.0.1:${port}`,sockets=[];
+async function join(packet){const ws=new WebSocket(`ws://127.0.0.1:${port}/phone-ws`);sockets.push(ws);await new Promise((resolve,reject)=>{ws.once('open',resolve);ws.once('error',reject);});const welcome=new Promise(resolve=>ws.on('message',data=>{const p=JSON.parse(data);if(p.type==='welcome')resolve(p);}));ws.send(JSON.stringify(packet));return {...await welcome,ws};}
+try{
+ const h=await join({type:'host'}),p=await join({type:'join',room:h.room,key:h.pairKey,name:'A'});
+ const endpoint=`${root}/phone-shots?room=${h.room}`,post=(token,e)=>fetch(endpoint,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(e)}),get=token=>fetch(endpoint,{headers:{Authorization:`Bearer ${token}`}});
+ assert.equal((await get('wrong')).status,401);
+ assert.equal((await post(h.token,attempt)).status,400,'host cannot forge phone sensor attempts');
+ assert.equal((await post(p.token,attempt)).status,200);
+ const r=new GolfRound();r.shoot(.6,0,analysis);const b=r.ball;
+ const launch={version:1,kind:'launch',id,data:{recordedAt:new Date().toISOString(),testSwing:true,source:'phone',playerId:p.playerId,playerName:'A',club:r.club,mode:r.mode,stroke:r.shots,aim:r.aim,heading:r.heading,position:{...b.start},lie:r.lie,toPin:r.toPin,power:.6,curve:0,analysis,delivery:b.delivery,velocity:[b.vx,b.vy,b.vz],rpm:b.rpm}};
+ assert.ok(validateShotEvent(launch));assert.equal((await post(p.token,launch)).status,400);assert.equal((await post(h.token,launch)).status,200);
+ while(!b.stopped)stepBall(b,1/120);r.finish();
+ const result={version:1,kind:'result',id,playerId:p.playerId,data:{endedAt:new Date().toISOString(),carry:b.carry,total:r.lastDistance,toPin:r.toPin,flightTime:b.age,maxHeight:30,lateral:0,forward:r.lastDistance,lie:r.lie,holed:r.holed,penalty:r.penalty,trajectory:[[0,0,0,0,0],[b.age,b.x,b.y,b.z,1]]}};
+ assert.ok(validateShotEvent(result));assert.equal((await post(h.token,result)).status,200);
+ const feedback={version:1,kind:'feedback',id,playerId:'someone-else',data:{verdict:'too-strong',strength:'gentle',shape:'straight',notes:'I meant a softer swing.'}};
+ assert.equal((await post(p.token,feedback)).status,200,'phone identity is bound by authentication, not a supplied player id');
+ const one=(await (await get(h.token)).json()).records;assert.equal(one.length,1);assert.equal(one[0].playerId,p.playerId);assert.equal(one[0].feedback.verdict,'too-strong');assert.equal(one[0].attempt.samples,undefined,'list endpoint omits raw samples');assert.equal(one[0].signal.samples,fixture.samples.length);
+ assert.equal((await post(h.token,{...result,data:{...result.data,total:0}})).status,200);assert.equal((await (await get(h.token)).json()).records[0].result.total,r.lastDistance,'retry cannot rewrite an immutable result');
+ assert.equal((await post(h.token,{...result,id:'unlaunched'})).status,400);assert.equal((await post(p.token,{...feedback,id:'someone-elses-shot'})).status,400);
+ assert.equal((await fetch(endpoint,{method:'POST',headers:{Authorization:`Bearer ${p.token}`,Origin:'https://wrong.example'},body:JSON.stringify(attempt)})).status,403);
+ const disk=JSON.parse(fs.readFileSync(path.join(directory,fs.readdirSync(directory)[0])));assert.equal(disk.launch.testSwing,true);assert.equal(disk.attempt.testSwing,true);assert.equal(disk.attempt.samples.length,fixture.samples.length);assert.equal(disk.feedback.notes,feedback.data.notes);assert.equal(JSON.stringify(disk).includes(p.token),false);assert.ok(disk.result.trajectory.length);
+ const fake={...disk,id:'mouse',source:'demo',feedback:{verdict:'matched'}};const summary=summarizeShots([disk,fake]);assert.equal(summary.total,1);assert.equal(summary.feedback['too-strong'],1);assert.equal(summary.feedback.matched,0,'simulation feedback cannot contaminate phone findings');
+ assert.ok(shotFlags({...disk,launch:{...disk.launch,analysis:{...analysis,impactMethod:'speed-peak',attack:-25}}}).some(s=>s.includes('limit')));
+ // Launch may beat the phone upload; late raw data enriches the same record.
+ assert.equal((await post(h.token,{...launch,id:'late'})).status,200);assert.equal((await post(p.token,{...attempt,id:'late'})).status,200);assert.equal((await (await get(h.token)).json()).records.length,2);
+ const pending=get(p.token);assert.equal((await (await pending).json()).records.length,2);
+ const invite=new Promise(resolve=>h.ws.on('message',raw=>{const p=JSON.parse(raw);if(p.type==='pair.key')resolve(p.key);}));h.ws.send(JSON.stringify({type:'pair.reset'}));const other=await join({type:'join',room:h.room,key:await invite,name:'B'});
+ assert.equal((await (await get(other.token)).json()).records.length,0,'another player cannot read private swing records');
+ assert.equal((await post(other.token,{...feedback,playerId:p.playerId})).status,400,'another player cannot rate this player’s attempt');
+ console.log('shottrackingcheck: bounded raw capture, joined attempts/launches/results/feedback, durable files, retries, ownership, validation, timing races and demo isolation passed');
+}finally{for(const s of sockets)s.terminate();await server.close();fs.rmSync(directory,{recursive:true,force:true});}

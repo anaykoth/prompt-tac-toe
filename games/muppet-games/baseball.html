@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><meta name="theme-color" content="#16332b"/><title>The Woolpark · Muppet Baseball</title><link rel="stylesheet" href="/src/baseball/style.css"/><link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>⚾</text></svg>"/></head>
+<body>
+  <canvas id="ballpark" tabindex="0" aria-label="First-person Muppet baseball. Move the mouse to move the bat. Left mouse raises it; right mouse lowers it. Space calls a pitch."></canvas>
+  <header class="masthead"><div class="venue"><a id="pub-link" href="/pub.html">↖ THE FUZZ & FEATHER</a><h1>THE WOOLPARK</h1><span>BIG SWINGS. SOFT PEOPLE.</span></div>
+    <div class="scoreboard"><div><small>THE LOCALS</small><strong id="cpu-score">0</strong></div><section><span id="inning">BATTING CAGE</span><p id="count">0 BALLS · 0 STRIKES</p><small id="outs">0 OUTS</small></section><div><small>YOUR LOT</small><strong id="player-score">0</strong></div></div>
+    <div class="header-actions"><a id="recorder-link" class="recorder-link" href="/mouse-lab.html">MOUSE LAB ↗</a><button id="sound" aria-pressed="true">SOUND ON</button><button id="settings-toggle">DUGOUT <kbd>ESC</kbd></button></div>
+  </header>
+  <aside id="dugout" hidden><div class="panel-heading"><h2>THE DUGOUT</h2><button id="close-settings" aria-label="Close dugout">×</button></div>
+    <label for="game-mode">WHAT ARE WE PLAYING?</label><select id="game-mode"><option value="batting">Batting cage</option><option value="pitching">Pitching practice</option><option value="match">Three-inning match</option></select>
+    <label for="pitch-mix">WHAT ARE THEY THROWING?</label><select id="pitch-mix"><option value="mixed">The whole bag</option><option value="straight">Straight pitches to learn on</option></select>
+    <label for="bat-controls">YOUR BAT CONTROLS</label><select id="bat-controls"><option value="direct">Connected bat · Mouse Lab</option><option value="classic">Classic · hold & flick</option></select>
+    <label for="bat-sensitivity">HAND SENSITIVITY <output id="bat-sensitivity-value">1.00×</output></label><input id="bat-sensitivity" type="range" min="40" max="200" step="5" value="100"/>
+    <p id="bat-settings-help">Move right to draw back, left to sweep. Mouse back opens the wrist; forward closes it and reaches out. Left/right buttons raise/lower. C resets between pitches.</p>
+    <label class="check"><input id="auto-next" type="checkbox"/> Automatic pitches (Space for manual)</label>
+    <label class="check"><input id="zone-visible" type="checkbox" checked/> Show the strike zone</label>
+    <label for="vision">PARK ATMOSPHERE <output id="vision-value">15%</output></label><input id="vision" type="range" min="0" max="70" value="15"/>
+    <button id="new-game" class="primary">START FRESH →</button><button id="pause-button">PAUSE / RESUME</button>
+    <p>Runs and fielding are automatic in this prototype. You control the pitch and the swing. Three outs changes sides in a match.</p>
+    <a id="hockey-link" href="/air-hockey.html">AIR HOCKEY →</a>
+  </aside>
+  <section id="welcome" class="welcome"><span class="eyebrow">FIRST-PERSON MUPPET BASEBALL</span><h2>PUT YOUR<br><em>HANDS</em> INTO IT.</h2><p>Feel the pitch coming. Find your height.<br>Then send it into somebody’s picnic.</p>
+    <div class="welcome-controls"><p><b>W / S</b> BAT HEIGHT <b>A / D</b> INSIDE / OUTSIDE</p><p id="welcome-swing"><b>MOVE RIGHT TO DRAW BACK · LEFT TO SWEEP</b></p><small id="welcome-detail">Left/right mouse raises/lowers. Stop your hand to hold a bunt. Practice freely, then press Space for a pitch.</small></div>
+    <button id="start" class="primary">TAKE THE PLATE →</button><button id="start-pitching">I WANT TO PITCH</button><button id="start-match">PLAY THREE INNINGS</button>
+  </section>
+  <div id="announcement" hidden><span id="announcement-label"></span><strong id="announcement-title"></strong><p id="announcement-copy"></p><button id="next-play">NEXT PITCH <kbd>SPACE</kbd></button></div>
+  <aside class="zone-card" id="zone-card"><div class="zone-heading"><b id="zone-heading">YOUR BAT</b><span id="height-readout">1.05 m</span></div>
+    <svg viewBox="0 0 150 150" role="img" aria-label="Strike zone, bat placement and approaching ball"><rect class="zone-fill" x="43" y="34" width="64" height="91"/><path class="zone-grid" d="M64 34V125M86 34V125M43 64H107M43 95H107"/><path class="zone-ground" d="M14 136H136"/><path id="bat-marker" d="M55 83H95"/><circle id="aim-marker" cx="75" cy="83" r="5"/><circle id="ball-marker" cx="75" cy="83" r="4" visibility="hidden"/><path class="zone-plate" d="M67 138H83L87 143L75 148L63 143Z"/></svg>
+    <p id="placement-help">W/S HIGH–LOW · A/D IN–OUT</p><span class="zone-caption">GOLD: YOUR PLACEMENT / WHITE: BALL</span>
+  </aside>
+  <section id="gesture-card" class="gesture-card"><span id="gesture-label">THE CONNECTED BAT</span><b id="gesture-status">YOUR HAND. YOUR BAT.</b><div class="gesture-track"><i id="gesture-fill"></i></div>
+    <div id="bat-guide"><div class="guide-labels"><span>BAT · TOP VIEW</span><span>MOUSE PATH ↗</span></div><canvas id="bat-guide-canvas" width="520" height="240" aria-label="Live top view of bat angle and mouse movement trail"></canvas><div class="bat-readouts"><span id="bat-angle-readout">0°</span><span id="bat-speed-readout">0.0 m/s</span><span id="bat-wrist-readout">NEUTRAL</span></div><p id="last-contact">Contact speed and direction will appear here.</p></div>
+    <p id="gesture-detail">Practice freely, then press Space for a pitch.</p><div id="pitch-choices" hidden><button data-pitch="fastball" class="selected">1 FASTBALL</button><button data-pitch="curve">2 CURVE</button><button data-pitch="changeup">3 CHANGEUP</button></div></section>
+  <div class="base-diamond" aria-label="Occupied bases"><i id="base-2"></i><i id="base-3"></i><i id="base-1"></i><span>HOME</span></div>
+  <footer><div><b id="role-label">YOU'RE AT THE PLATE</b><span id="controls-help">WASD PLACE · HOLD & FLICK LEFT · SPACE NEXT PITCH</span></div><p id="commentary">“That fence is mostly a suggestion.” — Derek</p></footer>
+  <script type="module" src="/src/baseball/main.js"></script>
+</body></html>

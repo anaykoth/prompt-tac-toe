@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import { SwingRecording, MAX_DURATION, MAX_SAMPLES, validateTake, poseAt, recordingMetrics, recordingBundle } from '../src/phone/recording.js';
+const sensor={rotationRate:{alpha:0,beta:-240,gamma:20},acceleration:{x:1.2,y:2.3,z:-.4},accelerationIncludingGravity:{x:1.2,y:12.1,z:-.4},interval:16.67};
+const r=new SwingRecording(100,{label:'A gentle putt',hand:'both',neutral:{alpha:359,beta:0,gamma:0}});
+r.sample(sensor,{alpha:359,beta:0,gamma:0},100);r.event('grip-down',105);
+r.sample({...sensor,rotationRate:{alpha:20,beta:300,gamma:-10}},{alpha:1,beta:20,gamma:3},120);r.event('grip-up',125);r.event('rejected',125,'No return');
+const take=r.finish(150,'finished');assert.ok(validateTake(take));assert.equal(take.samples[0].rate[1],-240);assert.equal(take.samples[1].acceleration[0],1.2);assert.equal(take.samples.length,2,'rejected swings retain their raw input');
+assert.equal(poseAt(take,10).yaw,1,'replay interpolates across the angle wrap');assert.equal(poseAt(take,10).pitch,10);assert.equal(recordingMetrics(take).hz,50);assert.equal(recordingMetrics(take).recognized,0);assert.ok(recordingMetrics(take).peak>300);
+r.sample(sensor,null,160);assert.equal(r.take.samples.length,2,'closed takes cannot change');
+const unavailable=new SwingRecording(0);unavailable.sample({rotationRate:null},null,10);const u=unavailable.finish(20,'tab-hidden');assert.ok(validateTake(u));assert.deepEqual(u.samples[0].rate,[null,null,null]);assert.equal(poseAt(u,10),null);assert.equal(recordingMetrics(u).validRates,0);
+const limited=new SwingRecording(0);for(let i=0;i<MAX_SAMPLES+10;i++)limited.sample(sensor,null,i);assert.equal(limited.take.samples.length,MAX_SAMPLES);assert.equal(limited.finish(20000).duration,MAX_DURATION);
+for(const altered of [{...take,id:'../bad'}, {...take,id:undefined}, {...take,duration:20000}, {...take,notes:'x'.repeat(1001)}, {...take,samples:[{...take.samples[0],rate:[NaN,0,0]}]}, {...take,samples:[take.samples[1],take.samples[0]]}])assert.equal(validateTake(altered),false);
+assert.equal(recordingBundle([take]).format,'felt-fairway-swing-lab');assert.match(recordingBundle([take]).units,/degrees\/second/);
+console.log('swingrecordingcheck: raw rates/acceleration/orientation, null sensors, grip/recognition events, bounded capture, circular replay, metrics, and input validation passed');

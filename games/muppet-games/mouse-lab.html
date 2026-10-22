@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><meta name="theme-color" content="#122b24"/><title>Mouse Lab · Record & Explain</title><link rel="stylesheet" href="/src/mouse-lab/style.css"/><link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>⚾</text></svg>"/></head>
+<body>
+  <header><a id="back-to-baseball" href="/baseball.html">↖ BACK TO BASEBALL</a><span>MOUSE + KEYS / THE FEEL OF IT</span><button id="done" disabled>DONE — READY FOR CODEX ↗</button></header>
+  <main>
+    <section class="intro"><div><span class="eyebrow">MOUSE LAB / RECORD & EXPLAIN</span><h1>SHOW ME<br>WHAT YOU <em>MEAN.</em></h1><p>Record a movement, then tell me what it means.<br>Mouse, keyboard, buttons and scroll — all on one timeline.</p></div>
+      <div class="instructions"><span>HOW TO RECORD</span><ol><li>Press <b>Record movement</b>. You get a two-second count-in.</li><li>Perform your movement. Use any mouse buttons, keys or scroll you need.</li><li>Press <kbd>ESC</kbd> or <kbd>F8</kbd> to finish. Repeat for as many examples as you need.</li></ol><p>Optional: tap <kbd>F6</kbd> to mark a moment, or annotate afterward.<br>Keyboard, modifiers, mouse buttons and scrolling are captured. <kbd>ESC</kbd> stops.</p></div>
+    </section>
+    <div class="workspace">
+      <section class="studio">
+        <div class="capture-bar"><div class="status"><i id="status-dot"></i><span id="capture-status" role="status">READY WHEN YOU ARE</span></div><span id="record-clock">0.00 / 12 s</span></div>
+        <div id="drawing-area"><canvas id="motion-pad" tabindex="0" aria-label="Recorded mouse path. Press Record movement to capture your motion."></canvas><div id="pad-message"><span id="pad-kicker">NOTHING TO GET RIGHT</span><strong id="pad-title">Make it feel natural.</strong><p id="pad-copy">Demonstrate a swing, an aim, a shortcut, a gesture.<br>Then explain what you intended to happen.</p></div><div class="axis-label">MOUSE PATH · RIGHT → · DOWN ↓</div><div id="path-scale">1 grid square = 100 px</div></div>
+        <div class="metrics"><div><small>DURATION</small><b id="metric-duration">—</b></div><div><small>PATH LENGTH</small><b id="metric-distance">—</b></div><div><small>PEAK SPEED</small><b id="metric-speed">—</b></div><div><small>INPUT EVENTS</small><b id="metric-events">—</b></div></div>
+        <div class="input-state"><span>HELD AT THIS MOMENT</span><b id="held-inputs">No keys or buttons</b><small id="wheel-input"></small></div><div class="speed-heading"><span>HAND SPEED</span><span>40 ms window · px/s</span></div><canvas id="speed-graph" aria-label="Mouse speed over time"></canvas><div id="input-events" class="input-events" aria-label="Recorded input events"></div>
+        <div class="replay"><button id="replay" disabled>▶ REPLAY</button><select id="replay-rate" aria-label="Replay speed"><option value="1">1× REAL TIME</option><option value="0.25">¼× SLOW MOTION</option></select><input id="scrub" type="range" min="0" max="1000" value="0" aria-label="Replay position" disabled/><output id="replay-time">0.00 s</output></div>
+      </section>
+      <aside>
+        <div class="capture-options"><label for="take-label">NAME THIS MOVEMENT</label><input id="take-label" maxlength="80" placeholder="e.g. Baseball swing, aiming, sword parry"/><label for="handedness">MOUSE HAND</label><select id="handedness"><option value="right">Right-handed</option><option value="left">Left-handed</option></select><label class="check"><input id="capture-pointer" type="checkbox" checked/> Let the mouse move beyond the screen</label><p class="small">Captures relative motion and hides the cursor during a take. Esc releases it.</p><button id="record" class="primary">● RECORD MOVEMENT</button><button id="stop" hidden>■ FINISH TAKE <kbd>F8</kbd></button><p id="capture-hint" class="small">Two-second count-in · up to 12 seconds per take</p></div>
+        <div class="takes-heading"><h2>YOUR TAKES</h2><span id="take-count">0 / 12</span></div><div id="takes"><p class="empty">Your movements will appear here.</p></div>
+        <section id="take-detail" hidden><label for="take-notes">WHAT DID THIS MOVEMENT MEAN?</label><textarea id="take-notes" maxlength="1000" rows="3" placeholder="Explain the intended action: what was the setup, the action, and the result?"></textarea><div class="marker-editor"><label for="marker-note">ANNOTATE A SPECIFIC MOMENT</label><input id="marker-note" maxlength="500" placeholder="At this point, I meant to…"/><button id="add-marker">+ NOTE AT PLAYHEAD</button><div id="markers"></div></div><button id="remove-take" class="quiet">REMOVE THIS TAKE</button></section>
+        <button id="download" disabled>↓ DOWNLOAD RECORDINGS (.JSON)</button><p id="save-status" class="small" role="status">Only this tab, only while recording. Saved locally in your browser.</p>
+      </aside>
+    </div>
+    <section id="ready-message" hidden><span class="eyebrow">READY TO REVIEW</span><h2>Your motion is saved.</h2><p id="ready-copy"></p><p>Tell Codex <b>“the movements are recorded”</b>. Keep this tab open so the recordings can be read here, or download the JSON as a separate file.</p></section>
+    <details id="recording-data"><summary>RECORDING DATA / FOR CODEX</summary><p>Raw mouse motion, timing, buttons, scroll, keyboard and modifier events, annotations, and notes.</p><textarea id="recording-json" readonly aria-label="Recording JSON" spellcheck="false"></textarea></details>
+  </main>
+  <footer>MOUSE LAB / MOTION + INTENT <span>Only input received by this tab while recording is captured. No game rules are applied.</span></footer>
+  <script type="module" src="/src/mouse-lab/main.js"></script>
+</body></html>

@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import { ShotJournal } from '../src/phone/shot-journal.js';
+const data=new Map();globalThis.localStorage={getItem:k=>data.get(k),setItem:(k,v)=>data.set(k,v)};globalThis.setInterval=()=>1;
+const link={connected:false,credentials:{room:'one',token:'private'}},q=new ShotJournal(link,'test');
+q.enqueue({version:1,id:'a',kind:'launch',data:{}});q.enqueue({version:1,id:'a',kind:'result',data:{}});q.enqueue({version:1,id:'a',kind:'feedback',data:{verdict:'matched'}});q.enqueue({version:1,id:'a',kind:'feedback',data:{verdict:'too-strong'}});
+assert.equal(q.pending.length,3);assert.ok(!data.get(q.key).includes('private'),'outbox never saves bearer tokens');
+const restored=new ShotJournal(link,'test');assert.equal(restored.pending.length,3);
+let calls=[];globalThis.fetch=async(url,options)=>{calls.push(JSON.parse(options.body));return {ok:true,json:async()=>({})};};
+link.connected=true;link.credentials.room='two';await restored.flush();assert.equal(calls.length,0,'old-room data is never uploaded to a new game');
+link.credentials.room='one';globalThis.fetch=async()=>{throw Error('offline');};await restored.flush();assert.equal(restored.pending.length,3);assert.match(restored.status,/Not saved yet/);
+globalThis.fetch=async(url,options)=>{calls.push(JSON.parse(options.body));return {ok:true,json:async()=>({})};};await restored.flush();assert.deepEqual(calls.map(c=>c.kind),['launch','result','feedback']);assert.equal(calls[2].data.verdict,'too-strong');assert.equal(restored.pending.length,0);
+console.log('shotqueuecheck: persistent retries, dependency order, latest feedback, token exclusion and room isolation passed');

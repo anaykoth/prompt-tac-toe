@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><meta name="theme-color" content="#171512"/><title>Air Hockey · The Fuzz & Feather</title></head>
+<body>
+  <canvas id="rink" tabindex="0" aria-label="First-person air hockey. Your fuzzy hand holds the mallet. Move your mouse across your half of the table. Space pauses; R restarts."></canvas>
+  <div class="film-edge" aria-hidden="true"></div>
+  <header class="game-header">
+    <div class="venue"><a id="pub-link" href="/pub.html">↖ THE FUZZ & FEATHER</a><h1>AIR HOCKEY</h1><span>GOOD HANDS. BAD COMPANY.</span></div>
+    <div class="scoreboard" aria-label="Match score">
+      <div class="score-player sun"><span id="sun-name">YOU</span><strong id="sun-score">0</strong></div>
+      <div class="score-middle"><span id="match-label">FIRST TO 7</span><i>✳</i><span id="rally-label">YOUR TABLE</span></div>
+      <div class="score-player moon"><span id="moon-name">DOT</span><strong id="moon-score">0</strong></div>
+    </div>
+    <div class="header-actions"><button id="sound" aria-pressed="true">SOUND ON</button><button id="settings-toggle">TABLE SETTINGS <kbd>ESC</kbd></button></div>
+  </header>
+  <aside id="settings-panel" hidden>
+    <div class="panel-heading"><h2>YOUR TABLE</h2><button id="close-settings" aria-label="Close table settings">×</button></div>
+    <div class="mode-switch" role="group" aria-label="Play mode"><button id="practice-mode" class="selected">PRACTICE</button><button id="room-mode">ROOM TABLE</button></div>
+    <div id="practice-options"><label for="difficulty">ACROSS THE TABLE</label><select id="difficulty"><option value="friendly">BARRY · strike 0.70×</option><option value="pub" selected>DOT · strike 0.90×</option><option value="shark">THE SHARK · strike 1.15×</option></select><p id="opponent-power" class="tuning-note">Your strike 1.00× · Dot's strike 0.90×</p></div>
+    <div id="room-options" hidden><label for="room-code">ROOM CODE</label><div class="room-form"><input id="room-code" maxlength="6" placeholder="ABCDEF" autocomplete="off" aria-label="Room code"/><button id="connect-room">JOIN</button></div><p id="connection-status" aria-live="polite">Join the same room as your friends.</p><div class="seat-buttons"><button id="join-sun">TAKE SUN</button><button id="join-moon">TAKE MOON</button></div><button id="spectate">LEAVE SEAT / WATCH</button></div>
+    <div class="strike-settings"><label for="hit-preset">MALLET → PUCK <output id="hit-strength-value">0.50×</output></label><select id="hit-preset"><option value="gentle">Gentle · 0.30× transfer</option><option value="pub" selected>Pub · 0.50× transfer</option><option value="original">Original · 1.00× transfer</option><option value="custom" disabled>Custom</option></select><input id="hit-strength" type="range" min="20" max="100" step="5" value="50" aria-label="Mallet strike strength"/><p id="hit-settings-note" class="tuning-note">Less punch, same quick hands. Incoming shots still rebound.</p></div>
+    <label for="visual-style">THROUGH YOUR EYES</label><select id="visual-style"><option value="alley">The pub · warm & hazy</option><option value="felt">Feltvision</option><option value="smoke">Smoke-filled room</option><option value="bloodshot">Bloodshot</option><option value="daylight">Clear daylight</option><option value="neon">Neon</option></select>
+    <div class="game-actions"><button id="pause">PAUSE <kbd>SPACE</kbd></button><button id="restart">NEW GAME <kbd>R</kbd></button></div>
+    <p class="settings-note">Your hand is your mallet. Its actual speed and angle make the shot. Your other hand rests on the rail. Soft hands save goals.</p>
+    <a id="pool-link" class="pool-link" href="/pool.html">BACK TO THE POOL TABLE →</a>
+    <div class="stats"><span>BEST RALLY <b id="best-rally">00</b></span><span>YOUR TOUCH <b id="touch-readout">READY</b></span></div>
+  </aside>
+  <div id="table-message" class="table-message"><span id="message-kicker">YOU'RE AT THE TABLE</span><strong id="message-title">YOUR SERVE.</strong><span id="message-detail">Move your fuzzy hand. Push through the puck.</span><button id="overlay-action" hidden>PLAY AGAIN</button></div>
+  <div class="crowd-comment"><span id="commentator">DEREK, SOMEWHERE TO YOUR LEFT</span><blockquote id="crowd-quote">“All in the wrist. I read that somewhere.”</blockquote></div>
+  <footer class="game-footer">
+    <div class="hand-guide"><b id="seat-label">YOU ARE SUN</b><span id="control-label">· MOUSE TO MOVE</span><p>Move your hand · <kbd>SPACE</kbd> breathe · <kbd>R</kbd> again</p><span id="network-note">LOCAL TABLE · NO CONNECTION NEEDED</span></div>
+    <div class="drinks"><div><label for="drunk">YOUR PINTS <b id="drunk-label">A LITTLE MERRY</b></label><button id="sober">SOBER UP</button></div><input id="drunk" type="range" min="0" max="100" value="32" aria-label="Drunken vision intensity"/><p>The room is drunk. You decide how much.</p></div>
+  </footer>
+  <script type="module" src="/src/air-hockey/main.js"></script>
+</body></html>

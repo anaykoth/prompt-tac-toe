@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>The Fuzz & Feather — Muppet Games</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🎱</text></svg>" />
+  <link rel="stylesheet" href="/src/pub/style.css" />
+</head>
+<body>
+  <canvas id="pub-scene" aria-label="The shared Muppet pub. Use WASD or click the floor to walk."></canvas>
+  <div id="name-labels" aria-hidden="true"></div>
+  <header class="masthead">
+    <a class="wordmark" href="/pub.html"><span class="eyebrow">MUPPET GAMES / AFTER HOURS</span>THE FUZZ <em>&</em> FEATHER<span class="wordmark-foot">GOOD HANDS. QUESTIONABLE COMPANY.</span></a>
+    <div class="room-tools" hidden id="room-tools"><button id="invite" class="small-button">INVITE A FRIEND <span id="room-code"></span></button><div class="purse"><span id="balance">250</span><small>PUB COINS</small></div></div>
+  </header>
+  <main id="welcome" class="welcome-panel">
+    <span class="eyebrow amber">THE DOOR IS OPEN</span>
+    <h1>A LITTLE SKILL.<br>A LOT OF <em>FELT.</em></h1>
+    <p class="lede">A room full of characters. A table worth defending.<br>Bring your hands. Bring a friend.</p>
+    <form id="entry-form">
+      <label for="player-name">WHAT DO THEY CALL YOU?</label>
+      <input id="player-name" name="name" maxlength="24" autocomplete="nickname" placeholder="Your Muppet's name" required value="Guest" />
+      <div class="entry-actions"><button type="submit" id="create-room" class="primary-button">OPEN A ROOM <span>↗</span></button><button type="button" id="show-join" class="secondary-button">JOIN A FRIEND</button></div>
+      <div id="join-fields" hidden><label for="join-code">ROOM CODE</label><div class="join-row"><input id="join-code" maxlength="12" placeholder="ABC123" autocomplete="off" /><button type="button" id="join-room" class="primary-button">JOIN →</button></div></div>
+      <p id="entry-message" role="status">Your room starts with 250 pub coins and four very confident locals.</p>
+    </form>
+    <div class="solo-links"><span>JUST FANCY A GAME?</span><a href="/pool.html">POOL ↗</a><a href="/air-hockey.html">AIR HOCKEY ↗</a><a href="/baseball.html">BASEBALL ↗</a><a href="/index.html">DARTS ↗</a></div>
+  </main>
+  <aside class="room-panel" id="room-panel" hidden>
+    <div class="panel-title"><span class="eyebrow">IN THE ROOM</span><span id="connection-state" class="connection-pill">CONNECTING</span></div>
+    <div id="roster"></div>
+    <div class="room-note">Walk up to a local and challenge them to rock, paper, scissors. All stakes are play money.</div>
+    <a id="hockey-link" class="game-link" href="/air-hockey.html"><span>01 / AIR HOCKEY</span><b>TAKE THE TABLE ↗</b></a>
+    <a id="pool-link" class="game-link" href="/pool.html"><span>02 / POOL CONTROLS</span><b>CLASSIC OR CONTACT ↗</b></a>
+    <a id="baseball-link" class="game-link" href="/baseball.html"><span>03 / THE WOOLPARK</span><b>TAKE THE PLATE ↗</b></a>
+    <button class="text-button" id="leave-room">LEAVE ROOM</button>
+  </aside>
+  <section class="interaction" id="interaction" hidden><span class="eyebrow" id="interaction-kind">NEARBY</span><strong id="interaction-name"></strong><p id="interaction-copy"></p><button class="primary-button" id="interact"><kbd>E</kbd><span id="interact-label">SAY HELLO</span></button></section>
+  <footer class="floor-notes"><span id="walking-help"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> WALK <i>·</i> CLICK FLOOR TO WALK <i>·</i> <kbd>E</kbd> CHALLENGE</span><span>EST. SOME TIME AFTER LAST ORDERS</span></footer>
+  <div id="toast" role="status" aria-live="polite" hidden></div>
+  <dialog id="rps-dialog">
+    <button class="close-dialog" id="rps-close" aria-label="Close challenge">×</button>
+    <span class="eyebrow amber">A FRIENDLY DISAGREEMENT</span><h2 id="rps-title">ROCK. PAPER. SCISSORS.</h2><p id="rps-subtitle"></p>
+    <div id="stake-panel"><label for="stake">COINS ON THE TABLE</label><div class="stake-row"><button type="button" data-stake="5">5</button><button type="button" data-stake="10" class="selected">10</button><button type="button" data-stake="25">25</button><button type="button" data-stake="50">50</button><input id="stake" type="number" min="1" max="250" step="1" value="10" aria-label="Stake in pub coins" /></div><button id="offer-stake" class="primary-button">OFFER 10 COINS →</button></div>
+    <div id="accept-panel" hidden><p id="offer-description"></p><div class="entry-actions"><button id="accept-stake" class="primary-button">YOU'RE ON</button><button id="decline-stake" class="secondary-button">NOT THIS TIME</button></div></div>
+    <div id="choice-panel" hidden><div class="duel-hands"><div><span id="my-hand">?</span><small>YOU</small></div><b id="duel-vs">VS</b><div><span id="their-hand">?</span><small id="their-name">THE LOCAL</small></div></div><p id="round-status" role="status">Choose your hand. It stays secret until both are locked.</p><div class="choice-buttons"><button data-choice="rock"><span>✊</span>ROCK<kbd>1</kbd></button><button data-choice="paper"><span>✋</span>PAPER<kbd>2</kbd></button><button data-choice="scissors"><span>✌</span>SCISSORS<kbd>3</kbd></button></div></div>
+    <div id="result-panel" hidden><h3 id="result-title"></h3><p id="result-copy"></p><button id="play-again" class="primary-button">ANOTHER ROUND →</button></div>
+    <p class="fineprint" id="rps-fineprint">Pub coins have no cash value. Both stakes are held until the round ends.</p>
+  </dialog>
+  <script type="module" src="/src/pub/main.js"></script>
+</body>
+</html>

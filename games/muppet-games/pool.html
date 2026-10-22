@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <title>THE FUZZ &amp; FEATHER — Muppet Pool</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🎱</text></svg>" />
+    <link rel="stylesheet" href="/src/pool/style.css" />
+  </head>
+  <body>
+    <canvas id="stage"></canvas>
+
+    <!-- scoreboard -->
+    <div id="hud">
+      <div class="board-panel">
+        <div class="player" id="p0">
+          <div class="p-name">YOU</div>
+          <div class="p-group">OPEN TABLE</div>
+          <div class="p-balls">—</div>
+          <div class="p-fouls"></div>
+        </div>
+        <div class="divider"><span id="turn-label">YOU TO BREAK</span></div>
+        <div class="player" id="p1">
+          <div class="p-name">THE LOCAL</div>
+          <div class="p-group">OPEN TABLE</div>
+          <div class="p-balls">—</div>
+          <div class="p-fouls"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- spin / bridge-hand placement -->
+    <div id="spin">
+      <div class="spin-ball">
+        <div class="spin-cross"></div>
+        <div id="spin-dot"></div>
+      </div>
+      <div class="spin-elev"><div id="spin-tilt"></div><span>TILT</span></div>
+      <div id="spin-readout">CENTRE</div>
+      <div class="spin-keys"><b>W A S D</b> bridge hand · <b>E</b> centre</div>
+    </div>
+
+    <!-- how drunk the room is -->
+    <div id="drunk">
+      <span id="drunk-label">FIRST ROUND</span>
+      <div class="drunk-track"><div id="drunk-fill"></div></div>
+    </div>
+
+    <!-- stroke meter -->
+    <div id="power" class="hidden">
+      <div id="power-track"><div id="power-fill"></div></div>
+      <div id="power-label">HOLD LEFT MOUSE · DRAW BACK · PUSH</div>
+    </div>
+
+    <div id="contact-guide" class="hidden" aria-hidden="true">
+      <div class="contact-ends"><span>DRAW BACK</span><span>CONTACT</span></div>
+      <div id="contact-track"><i id="contact-marker"></i><i class="contact-ball"></i></div>
+      <div id="contact-label">HOLD LEFT MOUSE · DRAW BACK · PUSH THROUGH</div>
+    </div>
+    <button id="control-badge" title="Change stroke controls in settings">CONTACT STROKE · TAB</button>
+    <div id="stroke-feedback" class="hidden"></div>
+    <div id="hint"></div>
+    <div id="toast"></div>
+    <div id="callout"></div>
+    <div id="chaos"></div>
+
+    <!-- settings -->
+    <div id="panel" class="collapsed">
+      <button id="panel-toggle" title="Settings (Tab)">⚙</button>
+      <div id="panel-body">
+        <h3>RENDER STYLE</h3>
+        <div id="styles"></div>
+        <h3>GAME</h3>
+        <label class="row"><span>Opponent</span>
+          <select id="opt-opponent">
+            <option value="hotseat">Hot-seat (2P)</option>
+            <option value="ai-drunk">CPU — Derek (six pints)</option>
+            <option value="ai-local" selected>CPU — The local</option>
+            <option value="ai-hustler">CPU — The hustler</option>
+          </select>
+        </label>
+        <label class="row"><span>Crowd trouble</span>
+          <select id="opt-chaos">
+            <option value="0">None — a quiet game</option>
+            <option value="1" selected>Normal — bar rules</option>
+            <option value="2">Riot</option>
+          </select>
+        </label>
+        <label class="row"><span>Crowd size</span><input type="range" id="opt-crowd" min="8" max="90" step="2" value="38" /></label>
+        <h3>CONTROLS</h3>
+        <label class="row"><span>Stroke style</span>
+          <select id="opt-controls">
+            <option value="contact" selected>Contact — new</option>
+            <option value="classic">Classic — original</option>
+          </select>
+        </label>
+        <p class="hint" id="control-description">Draw back, then push all the way to the ball.</p>
+        <h3>FEEL</h3>
+        <label class="row"><span>Mouse sensitivity</span><input type="range" id="opt-sens" min="0.3" max="2.5" step="0.05" value="1" /></label>
+        <label class="row"><span>Stroke power</span><input type="range" id="opt-power" min="0.5" max="2" step="0.05" value="1" /></label>
+        <label class="row"><span>Mouse stroke trace</span><input type="checkbox" id="opt-stroke-trace" checked /></label>
+        <label class="row"><span>Aim line</span><input type="checkbox" id="opt-aimline" checked /></label>
+        <label class="row"><span>Auto camera</span><input type="checkbox" id="opt-autocam" checked /></label>
+        <label class="row"><span>Sound</span><input type="checkbox" id="opt-sound" checked /></label>
+        <button id="btn-rack">RACK THEM AGAIN</button>
+        <a class="pub-return" href="/pub.html">← BACK TO THE SHARED PUB</a>
+        <p class="hint">Tab settings · 1-5 style · C free cam · V overhead · E centre tip · R new rack</p>
+      </div>
+    </div>
+
+    <!-- title -->
+    <div id="intro">
+      <div class="intro-card">
+        <h1>THE FUZZ<span>&amp; FEATHER</span></h1>
+        <p class="tag">eight ball · bar rules · a room that has had enough</p>
+        <div class="control-choices" role="group" aria-label="Stroke controls">
+          <button class="control-choice selected" data-control-mode="contact" aria-pressed="true"><span>NEW</span><b>CONTACT</b><small>Feel the moment of impact</small></button>
+          <button class="control-choice" data-control-mode="classic" aria-pressed="false"><span>ORIGINAL</span><b>CLASSIC</b><small>The familiar peak-speed stroke</small></button>
+        </div>
+        <p id="intro-control-description">Draw back, then push all the way to the ball. Speed at contact makes the shot. Release early to cancel.</p>
+        <ol>
+          <li><b>Mouse</b> aims the cue. Up and down raises the butt. In Contact, hold <b>Shift</b> for fine aim.</li>
+          <li><b>W A S D</b> sets the bridge hand for follow, draw and side spin. <b>E</b> centres it.</li>
+          <li><b>Hold left mouse, draw back, then push away.</b> Left/right motion bends your release; watch the stroke trace. Switch styles any time in <b>Tab</b> settings.</li>
+        </ol>
+        <button id="btn-start">RACK THEM UP</button>
+        <a class="pub-return" href="/pub.html">← BACK TO THE SHARED PUB</a>
+        <p class="hint">Place the cue ball, then take your shot · Esc releases the mouse</p>
+      </div>
+    </div>
+
+    <div id="loading"><div class="spin"></div><span>OPENING THE BAR…</span></div>
+
+    <script type="module" src="/src/pool/boot.js"></script>
+  </body>
+</html>

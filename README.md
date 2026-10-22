@@ -30,6 +30,15 @@ deterministic physics discipline. See [games/joust/README.md](games/joust/README
 It is a Vite workspace built into `public/joust/` by `npm run build`, with
 `/api/joust/*` routes and `joust_*` tables (migration 0003).
 
+`games/muppet-games/` is the rest of the Muppet games: the shared pub
+(rock–paper–scissors wagers), Pool, Pool Lab, Air Club (air hockey), The
+Woolpark (baseball), Felt Fairway (phone-swing golf) and Mouse Lab. They need
+their own Node room and phone servers, so they are not part of the Vercel
+build or the root workspaces — `cd games/muppet-games && npm install`, then
+see [its README](games/muppet-games/README.md) (`npm run dev:pub`,
+`npm run phone`, `npm test`). Its darts copy is the older pre-online version;
+the live one is `games/darts`.
+
 
 It is a self-contained static Vite build (three.js, no assets, no backend) that
 compiles into `public/darts/` as part of `npm run build`. It shares no code,

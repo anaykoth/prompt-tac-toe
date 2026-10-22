@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <title>SPLINTER ALLEY — Muppet Darts</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🎯</text></svg>" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="stage"></canvas>
+
+    <!-- crosshair -->
+    <div id="reticle" class="hidden">
+      <svg viewBox="0 0 64 64" width="64" height="64">
+        <circle cx="32" cy="32" r="15" class="ret-ring" />
+        <circle cx="32" cy="32" r="1.6" class="ret-dot" />
+        <path d="M32 6 v9 M32 49 v9 M6 32 h9 M49 32 h9" class="ret-tick" />
+      </svg>
+    </div>
+
+    <!-- power / windup meter -->
+    <div id="power" class="hidden">
+      <div id="power-track"><div id="power-fill"></div><div id="power-sweet"></div></div>
+      <div id="power-label">WIND UP</div>
+    </div>
+
+    <!-- scoreboard -->
+    <div id="hud">
+      <div class="board-panel">
+        <div class="player" id="p0">
+          <div class="p-name">PLAYER ONE</div>
+          <div class="p-score">501</div>
+          <div class="p-meta"><span class="p-avg">avg —</span><span class="p-out"></span></div>
+        </div>
+        <div class="divider">
+          <div class="round-label">ROUND</div>
+          <div class="round-num">1</div>
+        </div>
+        <div class="player" id="p1">
+          <div class="p-name">PLAYER TWO</div>
+          <div class="p-score">501</div>
+          <div class="p-meta"><span class="p-avg">avg —</span><span class="p-out"></span></div>
+        </div>
+      </div>
+      <div id="darts-left">
+        <span class="dart-pip"></span><span class="dart-pip"></span><span class="dart-pip"></span>
+      </div>
+      <div id="visit">
+        <span class="visit-label">THIS VISIT</span>
+        <span class="visit-scores"></span>
+        <span class="visit-total"></span>
+      </div>
+    </div>
+
+    <!-- the bar tab -->
+    <div id="bar">
+      <div class="bar-head">
+        <span class="bar-title">THE BAR</span>
+        <span class="bar-points"><b>0</b><i>pts</i></span>
+      </div>
+      <div class="bar-meter">
+        <span class="bar-state">SOBER</span>
+        <div class="drunk-track"><div class="drunk-fill"></div></div>
+        <span class="bar-mult">&times;1.0</span>
+      </div>
+      <div id="drinks"></div>
+      <p class="bar-hint"><b>B</b> — round of drinks</p>
+    </div>
+
+    <!-- walk mode banner -->
+    <div id="walk">
+      <span class="walk-keys"><b>WASD</b> move · <b>mouse</b> look · <b>Q</b> hustle</span>
+      <span class="walk-oche">BEHIND THE OCHE TO THROW</span>
+    </div>
+
+    <!-- big score toast -->
+    <div id="toast"></div>
+    <div id="pts"></div>
+    <div id="callout"></div>
+
+    <!-- settings / style panel -->
+    <div id="panel" class="collapsed">
+      <button id="panel-toggle" title="Settings (Tab)">⚙</button>
+      <div id="panel-body">
+        <h3>RENDER STYLE</h3>
+        <div id="styles"></div>
+        <h3>MATCH</h3>
+        <label class="row"><span>Start score</span>
+          <select id="opt-start">
+            <option value="301">301</option>
+            <option value="501" selected>501</option>
+            <option value="701">701</option>
+          </select>
+        </label>
+        <label class="row"><span>Double out</span><input type="checkbox" id="opt-doubleout" checked /></label>
+        <label class="row"><span>Opponent</span>
+          <select id="opt-opponent">
+            <option value="hotseat">Hot-seat (2P)</option>
+            <option value="ai-pub">CPU — Pub regular</option>
+            <option value="ai-shark" selected>CPU — Shark</option>
+            <option value="ai-robot">CPU — Machine</option>
+          </select>
+        </label>
+        <h3>FEEL</h3>
+        <label class="row"><span>Crowd size</span><input type="range" id="opt-crowd" min="24" max="220" step="4" value="132" /></label>
+        <label class="row"><span>Sensitivity</span><input type="range" id="opt-sens" min="0.4" max="2.2" step="0.05" value="1" /></label>
+        <label class="row"><span>Assist</span><input type="range" id="opt-assist" min="0" max="1" step="0.05" value="0.35" /></label>
+        <label class="row"><span>Sound</span><input type="checkbox" id="opt-sound" checked /></label>
+        <label class="row"><span>Auto board cam</span><input type="checkbox" id="opt-boardcam" checked /></label>
+        <label class="row"><span>Drunk mode</span><input type="checkbox" id="opt-bar" checked /></label>
+        <button id="btn-restart">RESTART MATCH</button>
+        <p class="hint">Tab settings · 1-5 style · Shift walk · B bar · C free cam · R restart · Space recentre</p>
+      </div>
+    </div>
+
+    <!-- puppet maker -->
+    <div id="maker" class="gone">
+      <div id="maker-panel">
+        <div id="maker-head">
+          <h2>BUILD YOUR PUPPET</h2>
+          <p>Nobody here is well. Choose how unwell you look.</p>
+        </div>
+        <div id="maker-body"></div>
+        <div id="maker-foot">
+          <button id="mk-random">SURPRISE ME</button>
+          <button id="mk-done">THAT'S ME</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- opponent nameplate -->
+    <div id="nameplate"><span class="np-name"></span><span class="np-sub"></span></div>
+
+    <!-- title / how to play -->
+    <div id="intro">
+      <div class="intro-card">
+        <h1>SPLINTER<span>ALLEY</span></h1>
+        <p class="tag">501 · double out · a crowd of unwell puppets</p>
+        <ol>
+          <li><b>Move the mouse</b> to aim. The reticle is where the dart wants to go.</li>
+          <li><b>Hold left mouse</b> and <b>pull down</b> to wind up.</li>
+          <li><b>Flick up and release</b> to throw. Flick speed sets power — land it in the green band.</li>
+          <li>A clean, straight flick throws straight. Sideways flicks pull the dart wide.</li>
+          <li><b>Hold Shift</b> to walk about. You can't throw from in front of the oche.</li>
+          <li><b>B</b> opens the bar. Drinking pays better and aims worse.</li>
+        </ol>
+        <button id="btn-make">BUILD YOUR PUPPET</button>
+        <button id="btn-start">STEP TO THE OCHE</button>
+        <p class="hint">You can also just click-and-release to use the auto power meter.</p>
+      </div>
+    </div>
+
+    <div id="loading"><div class="spin"></div><span>WARMING UP THE CROWD…</span></div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import { GolfParty } from '../src/golf/party.js';
+const p=new GolfParty(),roster=[{id:'a',name:'Jake',online:true},{id:'b',name:'Alex',online:true}];p.sync(roster);
+const a=p.round;p.round.shoot(.5);assert.equal(p.select('b'),false,'cannot switch while a ball is moving');
+a.ball.stopped=true;a.ball.x=3;a.ball.z=-150;a.finish();const lie={...a.position};p.next();assert.equal(p.activeId,'b','second player tees off next');assert.equal(p.round.shots,0);assert.equal(a.shots,1);assert.deepEqual(a.position,lie);
+const b=p.round;b.shoot(.5);b.ball.stopped=true;b.ball.x=0;b.ball.z=-200;b.finish();p.next();assert.equal(p.activeId,'a','farther ball plays next');
+p.sync([{...roster[0],online:false},roster[1]]);assert.equal(a.shots,1);p.sync(roster);assert.equal(p.players.get('a').round,a,'reconnect retains the exact ball and score');
+a.shoot(.5);a.ball.stopped=true;a.ball.holed=true;a.finish();p.next();assert.equal(p.activeId,'b','holed players are skipped');assert.equal(a.shots,2);
+b.shoot(.4);b.ball.stopped=true;b.finish();p.select('a');p.select('b');assert.equal(b.ball,null,'manual turn selection prepares the next shot at the saved lie');
+p.reset('putting');assert.equal(a.shots,0);assert.equal(b.shots,0);assert.equal(a.toPin,8);assert.equal(b.toPin,8);
+p.sync([roster[0]]);assert.equal(p.players.size,1);assert.equal(p.activeId,'a');
+console.log('partycheck: independent lies/scores, tee order, farthest-first, holed/offline players, reconnect and shared reset passed');
