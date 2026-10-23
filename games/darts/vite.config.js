@@ -4,7 +4,7 @@ import { defineConfig } from 'vite';
 // `base` must match the served path or the emitted asset URLs 404.
 export default defineConfig({
   base: '/darts/',
-  server: { host: true, port: 5173 },
+  server: { proxy: { "/api": "http://127.0.0.1:3000" }, host: true, port: 5173 },
   build: {
     target: 'es2022',
     outDir: '../../public/darts',

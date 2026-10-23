@@ -77,8 +77,8 @@ console.log("\n--- RemoteLog: loss, reorder, gaps, pass changes ---");
   ok("negative and silly indices read IDLE", deep(r.at(-1), IDLE_INPUT) && deep(r.at(1.5), IDLE_INPUT));
   r.reset(5);
   ok("reset moves it to the next pass, empty", r.pass === 5 && r.length === 0 && r.received === 0 && deep(r.at(0), IDLE_INPUT));
-  ok("the batch size stays inside the Realtime budget", BATCH_TICKS >= 4 && (1 / TICK) / BATCH_TICKS * 2 <= 40, `${(1 / TICK) / BATCH_TICKS * 2} msg/s`);
-  ok("the start lag is a real fraction of a second", LAG_TICKS * TICK >= 0.1 && LAG_TICKS * TICK <= 0.5);
+  ok("the stream is bounded at 40 packets/s per match", BATCH_TICKS >= 3 && (1 / TICK) / BATCH_TICKS * 2 <= 40, `${(1 / TICK) / BATCH_TICKS * 2} msg/s`);
+  ok("inputs start at T0 rather than delaying both clients", LAG_TICKS === 0);
 }
 
 /* ================================================================== */

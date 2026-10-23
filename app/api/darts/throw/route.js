@@ -1,8 +1,9 @@
+import { matchRequest } from "@/lib/match-context.mjs";
 import { applyThrow, seatForToken, touchPresence } from "@/lib/darts.mjs";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(req) {
+async function handle(req) {
   const body = await req.json().catch(() => ({}));
   const seat = seatForToken(body.token ?? null);
   if (seat === null) return Response.json({ ok: false, error: "bad-token" }, { status: 401 });
@@ -30,3 +31,5 @@ export async function POST(req) {
   }
   return Response.json(res);
 }
+
+export const POST = req => matchRequest(req,handle);

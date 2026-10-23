@@ -21,8 +21,9 @@ import { Store } from './game/store.js';
 import {
   packInput, IMPACT, RIDER, HORSE, SEAT, TICK, DEFAULT_PASSES, LANE_HALF, IDLE_INPUT,
 } from './game/spec.js';
+import { NetworkPass } from './net/simulation.js';
 import { JoustSession, readToken } from './net/online.js';
-import { LiveLink, RemoteLog, denseLog, BATCH_TICKS, LAG_TICKS } from './net/live.js';
+import { LiveLink, denseLog, BATCH_TICKS } from './net/live.js';
 
 const $ = (s) => document.querySelector(s);
 const clamp = THREE.MathUtils.clamp;
@@ -566,11 +567,16 @@ class Game {
     this.remote = null;
 
     this.live = new LiveLink({
+      token,room:this.net.room,
+      onStatus:s=>{if(s.up){this._sentTicks=0;this._streamTicks(true);}else if(this.livePass)this.hud.nameplate("RECONNECTING", "HOLDING THE PASS");},
       seat: r.seat,
       onTicks: (p) => this._onLiveTicks(p),
       onPresence: (s) => this._onLivePresence(s),
     });
-    this.live.connect();
+    if(!await this.live.connect()){
+      this.hud.toast('LIVE SERVER UNAVAILABLE','TRY AGAIN WHEN THE CONNECTION IS READY','var(--hot)');
+      this._goOffline();this._setOpponentSelect('cpu-knight');return;
+    }
 
     this._makeRider(0);
     this._makeRider(1);
@@ -688,7 +694,7 @@ class Game {
 
   _onLiveTicks(p) {
     if (!p || p.seat !== this.theirSeat) return;
-    if (this.remote && p.pass === this.passNo) this.remote.add(p);
+    if(this.networkPass && p.pass===this.passKey)this.networkPass.receive(p);
   }
 
   _onLivePresence(seats) {
@@ -708,16 +714,14 @@ class Game {
    * exactly what the sim itself did — and the batch is dense by construction.
    */
   _streamTicks(force = false) {
-    const sim = this.sim;
-    if (!sim || !this.live || !this.livePass) return;
-    const log = (sim.logs[this.mySeat] ||= []);
-    const upto = sim.tick | 0;
-    if (upto <= this._sentTicks) return;
-    const dense = denseLog(log, upto);
-    for (let i = this._sentTicks; i < upto; i++) log[i] = dense[i];
-    if (!force && upto - this._sentTicks < BATCH_TICKS) return;
-    this.live.sendTicks(this.passNo, this._sentTicks, log.slice(this._sentTicks, upto));
-    this._sentTicks = upto;
+    const sync=this.networkPass;
+    if(!sync||!this.live||!this.livePass)return;
+    const upto=sync.own.length;
+    if(!force&&upto-this._sentTicks<BATCH_TICKS)return;
+    if(upto<=this._sentTicks)return;
+    // Include the previous batch so an interrupted send heals automatically.
+    const from=Math.max(0,this._sentTicks-BATCH_TICKS);
+    if(this.live.sendTicks(this.passKey,from,sync.own.slice(from,upto)))this._sentTicks=upto;
   }
 
   /* ---------------- match flow ---------------- */
@@ -815,14 +819,11 @@ class Game {
   /**
    * The online 3-2-1, read off the shared clock rather than a local timer.
    *
-   * Both browsers start their sim LAG_TICKS after the server's T0, so the
-   * first ticks of the other rider have had time to arrive before either
-   * horse moves. The server's own lagTicks wins if it sent one.
+   * Inputs are sampled from T0. NetworkPass handles bounded prediction and replay.
    */
   _countdown() {
     if (!this.net || !this.armedPass) return;
-    const lag = this.net.timing?.lagTicks ?? LAG_TICKS;
-    const s = this.net.clock.until(this.armedPass.starts_at) + lag * TICK;
+    const s = this.net.clock.until(this.armedPass.starts_at);
     if (s > 0) {
       const c = Math.ceil(s);
       if (c <= 3 && c >= 1 && c !== this._countShown) {
@@ -860,12 +861,14 @@ class Game {
     });
     if (armed) {
       this.passNo = armed.pass_no;
-      this.remote = new RemoteLog(this.passNo);
+      this.passKey=`${armed.seed}:${this.passNo}`;
+      this.networkPass=new NetworkPass({seed,riders:armed.riders,seat:this.mySeat,pass:this.passKey});
+      this.remote=this.networkPass.remote;this.sim=this.networkPass.view;
       this._sentTicks = 0;
       this.cpu = null;
       this.live?.sendReady(this.passNo);
     } else {
-      this.remote = null;
+      this.remote = null;this.networkPass=null;
       this.cpu = new Cpu(this._cpuKey(), mulberry32((seed ^ 0x9e3779b9) >>> 0));
     }
     this.evCursor = 0;
@@ -894,20 +897,16 @@ class Game {
     this.hud.showReticle(false);
     if (quiet) return;
 
-    const sum = passSummary?.(this.sim) ?? { big: 'PASS', small: '', hype: 0.2 };
-    this.hud.toast(sum.big, sum.small, sum.hype > 0.6 ? 'var(--gold)' : 'var(--ink)');
-    this.crowd.react(sum.hype ?? 0.2, 0.6);
-    if ((sum.hype ?? 0) > 0.7) this.crowd.burstConfetti(160);
-    this._crowdCam(1.9);
-
-    if (online) {
+    if(online){
       this._streamTicks(true);
-      const log = denseLog(this.sim.logs[this.mySeat] ?? [], Math.max(1, this.sim.tick | 0));
-      this.live?.sendEnded(this.passNo, log.length);
-      this.net.submitTrace(this.passNo, log, this._drunk());
-      this.hud.nameplate('THE HERALD CONFERS', `WAITING ON ${this._opponentName()}`);
-      return;
+      const log=this.networkPass?.own??denseLog(this.sim.logs[this.mySeat]??[],Math.max(1,this.sim.tick|0));
+      this.live?.sendEnded(this.passKey,log.length);
+      this.net.submitTrace(this.passNo,log,this._drunk());
+      this.hud.nameplate('THE HERALD CONFERS','CONFIRMING THE PASS');return;
     }
+    const sum=passSummary?.(this.sim)??{big:'PASS',small:'',hype:.2};
+    this.hud.toast(sum.big,sum.small,sum.hype>.6?'var(--gold)':'var(--ink)');
+    this.crowd.react(sum.hype??.2,.6);this._crowdCam(1.9);
 
     const before = [this.match.score[0], this.match.score[1]];
     const res = this.match.applyPass(this.sim) ?? {};
@@ -945,7 +944,7 @@ class Game {
 
   _stepSim(dt) {
     const sim = this.sim;
-    if (!sim || sim.done) return;
+    if (!sim || (!this.livePass && sim.done)) return;
 
     // sample this tick's input for both seats, then advance
     const packed = packInput({
@@ -955,6 +954,13 @@ class Game {
       spur: this.input.spur, fling: this._fling,
     });
     this._fling = false;
+    if(this.livePass&&this.networkPass){
+      const tick=Math.floor(Math.max(0,this.net.clock.now()-this.armedPass.starts_at)/(TICK*1000));
+      this.networkPass.capture(tick,packed);this.sim=this.networkPass.advance();this._streamTicks();
+      this._consumeEvents();
+      if(this.networkPass.done||this.networkPass.expired)this._settle();
+      return;
+    }
 
     const t = sim.tick | 0;
     (sim.logs[this.mySeat] ||= [])[t] = packed;
@@ -972,7 +978,7 @@ class Game {
   }
 
   _consumeEvents() {
-    const evs = this.sim?.events;
+    const evs = this.livePass?this.networkPass?.confirmed.events:this.sim?.events;
     if (!evs) return;
     while (this.evCursor < evs.length) {
       const ev = evs[this.evCursor++];
@@ -1021,7 +1027,7 @@ class Game {
     // first real contact buys the slow-mo cinematic
     const contact = ev.type === 'hit' || ev.type === 'break' || ev.type === 'helm'
       || ev.type === 'unseat' || ev.type === 'helmet-hit' || ev.type === 'barrier';
-    if (contact && !this.impactDone) {
+    if (contact && !this.impactDone && !this.livePass) {
       this.impactDone = true;
       this.timeScale = IMPACT.slowmo;
       this.slowUntil = this.time + IMPACT.slowmoDur;
@@ -1079,7 +1085,7 @@ class Game {
     this.crowd.setDrunk(this.opts.bar ? this.bar.drunk * 0.8 : 0);
     if ((this._barTick = (this._barTick | 0) + 1) % 8 === 0) this._refreshBar();
 
-    if (this.phase === 'pass') this._stepSim(dt);
+    if (this.phase === 'pass') this._stepSim(this.livePass?real:dt);
     else if (this.phase === 'ready' && this.armedPass) this._countdown();
 
     // riders
@@ -1099,7 +1105,7 @@ class Game {
         this.hud.couch(me.lance?.couch ?? 0, me.lance?.fatigue ?? 0);
         this._placeReticle(me);
         // where is he: distance down the lane and closing speed
-        const them = rs[1];
+        const them = rs[this.theirSeat];
         if (them?.horse && this.hud.range) {
           const dist = Math.abs(me.horse.z - them.horse.z);
           const closing = (me.horse.speed ?? 0) + (them.horse.speed ?? 0);
@@ -1119,7 +1125,7 @@ class Game {
     }
     // in first person you are the rider: hide your own body, keep horse, lance, shield
     const fpv = !this.freeCam && this.cam.mode === 'chase';
-    this.riders?.[0]?.setFirstPerson?.(fpv);
+    for(let seat=0;seat<2;seat++)this.riders?.[seat]?.setFirstPerson?.(fpv&&seat===this.mySeat);
 
     // crowd + lists
     this.crowd.update(this.simTime, dt);

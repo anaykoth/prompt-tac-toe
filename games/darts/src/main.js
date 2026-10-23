@@ -448,6 +448,7 @@ class Game {
     // channel; the poll stays underneath as the authoritative safety net
     this.live?.stop();
     this.live = new LiveLink({
+      token,room:this.net.room,onChanged:()=>this.net?.poll(),
       seat: r.seat,
       onAim: (p) => this._onLiveAim(p),
       onLaunch: (p) => this._onLiveLaunch(p),
@@ -746,7 +747,7 @@ class Game {
     // echo first — their screen starts the flight before our POST round-trips
     this.live?.sendLaunch(msg);
     this._launchLocal(this.match.current, msg);
-    if (this.isOnline) this.net.submit(msg, this.bar.drunk);
+    if (this.isOnline) this.net.submit(msg, this.bar.drunk).then(r=>{if(r)this.live?.sendChanged();});
   }
 
   /**

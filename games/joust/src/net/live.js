@@ -5,22 +5,15 @@ import { IDLE_INPUT } from '../game/spec.js';
  * TILT ALLEY's live tier: the other rider, on your screen, now.
  *
  * Each seat broadcasts its own packed input ticks in small batches while the
- * pass runs, so the remote horse and lance are driven by real input roughly
- * 100 ms behind rather than guessed at. Spectacle only — the verdict comes
+ * pass runs, so the remote horse and lance are driven by real input with bounded prediction and replay. Spectacle only — the verdict comes
  * from the server re-simulating both traces. Everything here may be lost,
  * duplicated or arrive out of order, and RemoteLog is built to expect that.
  */
 export const CHANNEL = 'tilt-alley-live';
-/**
- * Six ticks a packet is ten packets a second per rider. The Supabase Free
- * plan allows 100 Realtime messages a second across the whole project and
- * disconnects the client above it, so the stream is deliberately kept an
- * order of magnitude below the ceiling; the sim never depends on a packet
- * arriving, only on the batch index it carries.
- */
-export const BATCH_TICKS = 6;
-/** Both browsers start their sim this far after the server's T0 (200 ms). */
-export const LAG_TICKS = 12;
+/** Three 60 Hz ticks per packet; the dedicated relay has a per-seat budget. */
+export const BATCH_TICKS = 3;
+/** Sampling starts at the server's T0; prediction/replay handles latency. */
+export const LAG_TICKS = 0;
 
 /**
  * A dense copy of a sparse input log, holes held.
@@ -45,10 +38,10 @@ export function denseLog(log, upto = log?.length ?? 0) {
 }
 
 export class LiveLink {
-  constructor({ seat, onTicks = () => {}, onReady = () => {}, onEnded = () => {}, onPresence = () => {} } = {}) {
+  constructor({ seat, onTicks = () => {}, onReady = () => {}, onEnded = () => {}, onPresence = () => {}, onStatus = () => {}, token, room } = {}) {
     this.seat = seat;
     this.link = new SharedLink({
-      channel: CHANNEL,
+      channel: CHANNEL,token,room,onStatus,
       seat,
       on: {
         ticks: (p) => onTicks(p),      // {seat, pass, from, ticks:[[..5..], ...]}
@@ -60,7 +53,7 @@ export class LiveLink {
     });
   }
 
-  connect() { this.link.connect(); }
+  connect() { return this.link.connect(); }
   stop() { this.link.stop(); }
   get up() { return this.link.up; }
   /** Test seam: drive a fake channel, same as the shared layer. */
@@ -90,15 +83,17 @@ export class RemoteLog {
   /** Accept a batch; ignores anything from another pass. */
   add({ pass, from, ticks } = {}) {
     if (pass !== undefined && pass !== this.pass) return false;
-    if (!Number.isInteger(from) || from < 0 || !Array.isArray(ticks)) return false;
+    if (!Number.isInteger(from) || from < 0 || !Array.isArray(ticks) || from+ticks.length>542) return false;
+    let changed=false;
     for (let i = 0; i < ticks.length; i++) {
       const t = ticks[i];
-      if (!Array.isArray(t) || t.length !== 5) continue;
+      if (!Array.isArray(t) || t.length !== 5 || !t.every(Number.isFinite) || t.slice(0,4).some(n=>Math.abs(n)>1) || !Number.isInteger(t[4]) || t[4]<0 || t[4]>15) continue;
+      if(this.ticks[from+i])continue;
       this.ticks[from + i] = t;
       if (from + i > this.top) this.top = from + i;
-      this.received++;
+      this.received++;changed=true;
     }
-    return true;
+    return changed;
   }
 
   /** Highest received index + 1: how far the remote rider has got. */

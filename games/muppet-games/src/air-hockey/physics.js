@@ -11,30 +11,30 @@ export const HOCKEY = Object.freeze({
   drag: .075, winScore: 7, goalPause: 1.25, substep: 1 / 480,
 });
 
-export function createHockeyState(settings) {
+export function createHockeyState(settings, teamSize=1) {
   return {
-    mallets: [{ x: 0, y: 1.25, vx: 0, vy: 0 }, { x: 0, y: -1.25, vx: 0, vy: 0 }],
+    teamSize, mallets: Array.from({length:2*teamSize},(_,i)=>({x:teamSize===1?0:((Math.floor(i/2)/(teamSize-1))-.5)*1.2,y:i%2===0?1.25:-1.25,vx:0,vy:0})),
     puck: { x: 0, y: .62, vx: 0, vy: 0 },
     score: [0, 0], status: 'playing', goalTimer: 0, winner: null,
     servingSeat: 0, rally: 0, longestRally: 0, hits: 0, banks: 0,
     goals: 0, lastGoal: null, lastHit: null, time: 0,
-    settings: normalizeHockeySettings(settings), contacts: [false, false],
+    settings: normalizeHockeySettings(settings), contacts: Array(2*teamSize).fill(false),
   };
 }
 
 export function resetHockey(state) {
-  Object.assign(state, createHockeyState(state.settings));
+  Object.assign(state, createHockeyState(state.settings, state.teamSize ?? 1));
   return state;
 }
 
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 
 export function constrainTarget(target, seat) {
-  const home = seat === 0 ? 1.25 : -1.25;
+  const home = seat % 2 === 0 ? 1.25 : -1.25;
   const x = Number.isFinite(target?.x) ? target.x : 0;
   const y = Number.isFinite(target?.y) ? target.y : home;
   const r = HOCKEY.malletRadius;
-  return { x: clamp(x, -1 + r, 1 - r), y: seat === 0
+  return { x: clamp(x, -1 + r, 1 - r), y: seat % 2 === 0
     ? clamp(y, r + .015, 1.7 - r) : clamp(y, -1.7 + r, -r - .015) };
 }
 
@@ -80,7 +80,7 @@ function walls(state) {
 function substep(state, targets, dt) {
   const c = HOCKEY;
   state.time += dt;
-  for (let i = 0; i < 2; i++) {
+  for (let i = 0; i < state.mallets.length; i++) {
     const m = state.mallets[i], t = targets[i];
     const dx = t.x - m.x, dy = t.y - m.y;
     const distance = Math.hypot(dx, dy);
@@ -93,7 +93,7 @@ function substep(state, targets, dt) {
   if (state.status === 'goal') {
     state.goalTimer -= dt;
     if (state.goalTimer <= 0) {
-      state.status = 'playing'; state.rally = 0; state.lastHit = null; state.contacts = [false, false];
+      state.status = 'playing'; state.rally = 0; state.lastHit = null; state.contacts = state.mallets.map(()=>false);
       Object.assign(state.puck, { x: 0, y: state.servingSeat === 0 ? .62 : -.62, vx: 0, vy: 0 });
     }
     return;
@@ -105,7 +105,7 @@ function substep(state, targets, dt) {
   p.vx *= damping; p.vy *= damping;
   // At 480 Hz, even maximum opposing speeds travel < 0.046m per step,
   // versus a 0.208m contact radius. A fast input cannot jump through a puck.
-  for (let i = 0; i < 2; i++) {
+  for (let i = 0; i < state.mallets.length; i++) {
     const m = state.mallets[i];
     let dx = p.x - m.x, dy = p.y - m.y;
     let distance = Math.hypot(dx, dy);
@@ -113,7 +113,7 @@ function substep(state, targets, dt) {
     const continuingContact = state.contacts[i];
     state.contacts[i] = distance < reach;
     if (distance >= reach) continue;
-    if (distance < 1e-9) { dx = 0; dy = i === 0 ? -1 : 1; distance = 1; }
+    if (distance < 1e-9) { dx = 0; dy = i % 2 === 0 ? -1 : 1; distance = 1; }
     const nx = dx / distance, ny = dy / distance;
     p.x = m.x + nx * (reach + 1e-5); p.y = m.y + ny * (reach + 1e-5);
     const puckNormal = p.vx * nx + p.vy * ny;
@@ -124,7 +124,7 @@ function substep(state, targets, dt) {
       // Only the moving mallet's added drive is attenuated. A soft bumper can
       // remain in contact during a sweep; separation correction prevents
       // penetration without injecting a fresh strike every 1/480 second.
-      const transfer = state.settings.hitStrength * state.settings.seatPower[i];
+      const transfer = state.settings.hitStrength * state.settings.seatPower[i%2];
       const drive = handNormal > 0 ? handNormal * transfer : handNormal;
       const outgoing = continuingContact
         ? Math.max(puckNormal, -c.malletBounce * puckNormal)
@@ -150,10 +150,10 @@ function substep(state, targets, dt) {
 export function stepHockey(state, targets, dt) {
   if (!Number.isFinite(dt) || dt <= 0) return state;
   state.settings = normalizeHockeySettings(state.settings);
-  if (!Array.isArray(state.contacts)) state.contacts = [false, false];
+  if (!Array.isArray(state.contacts)) state.contacts = state.mallets.map(()=>false);
   const elapsed = Math.min(dt, .25);
   const steps = Math.ceil(elapsed / HOCKEY.substep);
-  const safe = [constrainTarget(targets?.[0], 0), constrainTarget(targets?.[1], 1)];
+  const safe = state.mallets.map((_,i)=>constrainTarget(targets?.[i],i));
   for (let n = 0; n < steps; n++) substep(state, safe, elapsed / steps);
   return state;
 }

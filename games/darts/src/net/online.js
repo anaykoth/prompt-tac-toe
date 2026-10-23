@@ -1,3 +1,4 @@
+import { readRoom } from "../../../shared/net/live.js";
 /**
  * Online play against the other seat.
  *
@@ -17,6 +18,7 @@ const HEARTBEAT_MS = 6000;
 export class OnlineSession {
   constructor(opts = {}) {
     this.token = opts.token ?? null;
+    this.room = opts.room ?? readRoom();
     this.onState = opts.onState ?? (() => {});
     this.onThrow = opts.onThrow ?? (() => {});
     this.onError = opts.onError ?? (() => {});
@@ -46,6 +48,7 @@ export class OnlineSession {
     this.active = true;
     this._absorb(r, { replayAll: true });
     this._schedule();
+    clearInterval(this._beat);
     this._beat = setInterval(() => this.heartbeat(), HEARTBEAT_MS);
     return r;
   }
@@ -87,8 +90,8 @@ export class OnlineSession {
     if (this._busy || !this.active) return;
     this._busy = true;
     try {
-      const url = `/api/darts/state?since=${this.lastSeq}${this.token ? `&t=${encodeURIComponent(this.token)}` : ''}`;
-      const res = await fetch(url, { cache: 'no-store' });
+      const url = `/api/darts/state?room=${encodeURIComponent(this.room)}&since=${this.lastSeq}${this.token ? `&t=${encodeURIComponent(this.token)}` : ''}`;
+      const res = await fetch(url, { cache: 'no-store',signal:AbortSignal.timeout(8000) });
       const r = await res.json();
       if (r?.ok) { this.connected = true; this._absorb(r); }
     } catch {
@@ -145,9 +148,9 @@ export class OnlineSession {
   async _post(path, body) {
     try {
       const res = await fetch(path, {
-        method: 'POST',
+        method: 'POST',signal:AbortSignal.timeout(8000),
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ token: this.token, ...body }),
+        body: JSON.stringify({ token: this.token, room:this.room, ...body }),
       });
       return await res.json();
     } catch {

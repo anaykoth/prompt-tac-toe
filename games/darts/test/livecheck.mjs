@@ -60,7 +60,7 @@ function makeLink(seat = 0) {
   link.sendAim({ x: 0.1, y: 1.7, k: 0 });
   link.sendAim({ x: 0.2, y: 1.7, k: 0 });          // same millisecond: dropped
   assert.equal(chan.sent.length, 1);
-  link._lastAim -= AIM_MS + 1;                      // pretend time passed
+  link._last.set('aim',Date.now()-AIM_MS-1);                      // pretend time passed
   link.sendAim({ x: 0.3, y: 1.7, k: 1 });
   assert.equal(chan.sent.length, 2);
   link.sendLaunch({ seed: 99 });

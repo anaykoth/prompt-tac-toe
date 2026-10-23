@@ -1,8 +1,9 @@
+import { matchRequest } from "@/lib/match-context.mjs";
 import { getMatch, listThrows, listPresence, seatForToken } from "@/lib/darts.mjs";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req) {
+async function handle(req) {
   const url = new URL(req.url);
   const since = Number(url.searchParams.get("since") ?? -1);
   const seat = seatForToken(url.searchParams.get("t"));
@@ -12,3 +13,5 @@ export async function GET(req) {
     match: g.state.match, throws, seats,
   });
 }
+
+export const GET = req => matchRequest(req,handle);

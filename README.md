@@ -46,12 +46,11 @@ see [its README](games/muppet-games/README.md) (`npm run dev:pub`,
 the live one is `games/darts`.
 
 
-It is a self-contained static Vite build (three.js, no assets, no backend) that
-compiles into `public/darts/` as part of `npm run build`. It shares no code,
-routes, database or env vars with tic-tac-toe; the only touch points are the
-workspace entry in `package.json`, one rewrite in `next.config.mjs`, and the
-gitignored build output. `npm test` still runs only the tic-tac-toe engine
-tests — the darts suites are `npm run test:darts`.
+The Darts and Joust Vite builds compile into `public/darts/` and `public/joust/`
+as part of `npm run build`. Their authoritative APIs share the Next deployment
+and Postgres connection. `npm test` runs the tic-tac-toe engine tests; use
+`npm run test:darts`, `npm run test:joust`, and `npm run test:network` for the
+other games.
 
 Head-to-head works: pick **Online** in settings and it reuses your
 tic-tac-toe player token, so seat X is Anay and seat O is Jake. It adds
@@ -64,6 +63,14 @@ migration script applies every file in `supabase/migrations/` in order (0001
 tic-tac-toe, 0002 darts, 0003 and 0004 jousting) and is safe to re-run. Until
 then the online option fails gracefully back to the CPU; offline darts and
 tic-tac-toe are unaffected either way.
+
+## Multiplayer stack
+
+See [the shared multiplayer guide](games/shared/README.md) for 1v1–4v4
+air hockey, multiple tables per lobby, input replay, the dedicated live relay,
+local testing and deployment. Live game traffic no longer uses the CRM project.
+The integrated jousting work requires migration 0004 and the game-host settings
+in that guide.
 
 ## Stack
 

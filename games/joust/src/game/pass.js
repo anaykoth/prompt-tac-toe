@@ -155,6 +155,22 @@ export class PassSim {
     for (const r of this.riders) this._pose(r);
   }
 
+  /** Independent checkpoint for bounded network prediction. Keep the PRNG
+   * at the exact draw position; cloning must not consume any randomness. */
+  clone() {
+    const copy = value => {
+      if (value?.isVector3 || value?.isQuaternion) return value.clone();
+      if (Array.isArray(value)) return value.map(copy);
+      if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, copy(item)]));
+      return value;
+    };
+    const fork = Object.create(PassSim.prototype);
+    for (const [key, value] of Object.entries(this)) {
+      fork[key] = key === 'rng' ? this.rng.clone() : key === 'logs' ? value : copy(value);
+    }
+    return fork;
+  }
+
   /* ---- input sampling, once per tick, fixed rng order ---- */
   _sampleTick() {
     const tk = Math.floor(this._sub / SUBS_PER_TICK);
