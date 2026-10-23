@@ -162,8 +162,8 @@ export class HockeyScene {
     return constrainTarget({x:this.hit.x/S,y:this.hit.z/S},seat);
   }
   update(dt,t,state,{ownSeat=0,drunk=.32,excitement=0,reducedMotion=false}={}){
-    this.seat=ownSeat??0;const orientation=this.seat===0?1:-1;
-    const ours=state.mallets[this.seat],theirs=state.mallets[1-this.seat];
+    this.seat=ownSeat??0;const orientation=this.seat%2===0?1:-1;
+    const ours=state.mallets[this.seat],theirs=state.mallets[1-(this.seat%2)];
     const ownHand=v(ours.x*S,TOP+.15,ours.y*S),enemyHand=v(theirs.x*S,TOP+.15,theirs.y*S);
     const sway=reducedMotion?0:drunk;
     this.camera.position.set(Math.sin(t*.73)*sway*.028,2.02+Math.sin(t*.91)*sway*.017,orientation*2.32);
@@ -182,7 +182,8 @@ export class HockeyScene {
     const enemyX=this.opponent.group.position.x;
     this._poseArm(this.opponentArms[0],v(enemyX-.28*orientation,1.16,-1.79*orientation),v(enemyX-.35*orientation,1.04,-1.55*orientation),enemyHand,orientation);
     this._poseArm(this.opponentArms[1],v(enemyX+.28*orientation,1.14,-1.79*orientation),v(enemyX+.52*orientation,1.05,-1.54*orientation),v(.72*orientation,TOP+.11,-1.39*orientation),orientation);
-    state.mallets.forEach((m,i)=>this.mallets[i].position.set(m.x*S,TOP,m.y*S));
+    while(this.mallets.length<state.mallets.length){const m=this.mallets[this.mallets.length%2].clone(true);this.mallets[0].parent.add(m);this.mallets.push(m);}
+    this.mallets.forEach((m,i)=>{m.visible=i<state.mallets.length;if(m.visible){const b=state.mallets[i];m.position.set(b.x*S,TOP,b.y*S);}});
     this.puck.position.set(state.puck.x*S,TOP,state.puck.y*S);this.puck.visible=state.status==='playing';
     const score=state.score.join(':');if(score!==this.lastScore){this.lastScore=score;for(const p of this.goalPips)p.material.emissiveIntensity=state.score[p.userData.seat]>p.userData.point?2:0;}
     this.goalFlash=Math.max(0,this.goalFlash-dt*.7);

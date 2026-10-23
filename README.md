@@ -28,7 +28,13 @@ unwell puppets. See [games/darts/README.md](games/darts/README.md).
 `/joust` is the third game: 3D jousting, same puppets, same crowd, same
 deterministic physics discipline. See [games/joust/README.md](games/joust/README.md).
 It is a Vite workspace built into `public/joust/` by `npm run build`, with
-`/api/joust/*` routes and `joust_*` tables (migration 0003).
+`/api/joust/*` routes and `joust_*` tables (migrations 0003 and 0004).
+
+The jousting server has its own suite against a real Postgres. Start the
+throwaway cluster with `npm run test:pg start`, run `npm run test:joust`
+(physics, pass, rules, then the server check), then `npm run test:pg stop`.
+Without that cluster the server check prints SKIPPED and exits 0, so a green
+run that says SKIPPED is not a green server.
 
 `games/muppet-games/` is the rest of the Muppet games: the shared pub
 (rock–paper–scissors wagers), Pool, Pool Lab, Air Club (air hockey), The
@@ -40,12 +46,11 @@ see [its README](games/muppet-games/README.md) (`npm run dev:pub`,
 the live one is `games/darts`.
 
 
-It is a self-contained static Vite build (three.js, no assets, no backend) that
-compiles into `public/darts/` as part of `npm run build`. It shares no code,
-routes, database or env vars with tic-tac-toe; the only touch points are the
-workspace entry in `package.json`, one rewrite in `next.config.mjs`, and the
-gitignored build output. `npm test` still runs only the tic-tac-toe engine
-tests — the darts suites are `npm run test:darts`.
+The Darts and Joust Vite builds compile into `public/darts/` and `public/joust/`
+as part of `npm run build`. Their authoritative APIs share the Next deployment
+and Postgres connection. `npm test` runs the tic-tac-toe engine tests; use
+`npm run test:darts`, `npm run test:joust`, and `npm run test:network` for the
+other games.
 
 Head-to-head works: pick **Online** in settings and it reuses your
 tic-tac-toe player token, so seat X is Anay and seat O is Jake. It adds
@@ -53,10 +58,32 @@ tic-tac-toe player token, so seat X is Anay and seat O is Jake. It adds
 shares the same database. It does not touch the tic-tac-toe tables, routes or
 engine.
 
-**Run `npm run migrate` once** to create the darts tables — the migration
-script now applies every file in `supabase/migrations/` in order and is safe to
-re-run. Until then the online option fails gracefully back to the CPU; offline
-darts and tic-tac-toe are unaffected either way.
+**Run `npm run migrate` once** to create the darts and jousting tables — the
+migration script applies every file in `supabase/migrations/` in order (0001
+tic-tac-toe, 0002 darts, 0003 and 0004 jousting) and is safe to re-run. Until
+then the online option fails gracefully back to the CPU; offline darts and
+tic-tac-toe are unaffected either way.
+
+## Multiplayer stack
+
+For now, one player's computer hosts the session. From the repository root:
+
+```sh
+npm --prefix games/muppet-games ci
+npm run host:games
+```
+
+Share the printed LAN link. For friends on other networks, install `cloudflared`
+and use `npm run host:games -- --internet` for a temporary HTTPS link. Keep the
+host computer awake and the terminal open. Pub/team hockey run immediately;
+Darts/Joust on the existing website need the relay settings in the guide below.
+
+
+See [the shared multiplayer guide](games/shared/README.md) for 1v1–4v4
+air hockey, multiple tables per lobby, input replay, the dedicated live relay,
+local testing and deployment. Live game traffic no longer uses the CRM project.
+The integrated jousting work requires migration 0004 and the game-host settings
+in that guide.
 
 ## Stack
 
@@ -86,4 +113,5 @@ All secrets are Vercel env vars (none in this repo):
 
 - `npm test` — rules-engine tests (plain node, no DB needed).
 - `npm run dev` — local dev server; copy `.env.local` values from Vercel.
-- `npm run migrate` — applies `supabase/migrations/0001_ttt_tables.sql`.
+- `npm run migrate` — applies every file in `supabase/migrations/` in order
+  (0001 through 0004), and is safe to re-run.

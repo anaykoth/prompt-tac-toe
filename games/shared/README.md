@@ -1,126 +1,176 @@
-# Live play: the shared layer
+# Multiplayer services
 
-Two people, one browser each, playing the same match. This folder holds the
-part that is the same for every game in the repo; each game keeps its own
-rules, its own tables and its own routes.
+The game host is a persistent Node/WebSocket process. Next.js still serves
+Tic-Tac-Toe, Darts and Joust and their Postgres APIs. The same game host serves
+the Muppet games and the authenticated live relay. No game traffic uses the
+CRM's Realtime project.
 
-```
-games/shared/net/live.js     LiveLink, SeenIds, ServerClock, readToken
-games/shared/test/livecheck.mjs
-npm run test:shared
-```
+## Rooms and teams
 
-Import it relatively from a game (`../../shared/net/live.js`); it needs
-`@supabase/realtime-js`, which the root workspace already hoists.
+The pub owns identities and lobby membership (24 connected people per lobby).
+Each lobby can contain up to 12 independent air-hockey tables. A table has its
+own roster, physics state, input acknowledgements, epoch and rematch votes.
+Choose 1v1, 2v2, 3v3 or 4v4 in Air Hockey → Table Settings. Everyone joins the
+same lobby and selects the same table. The Sun/Moon buttons select the next
+available seat on that team. Unseated players can spectate; a match begins once every playing slot is filled.
 
-## The pattern (proven in darts, verified live on prod 2026-09-16)
+`matches.js` is the shared roster contract; it supports arbitrary team shapes
+up to 24 playing slots, while each game's adapter chooses its supported shape.
+Air hockey currently implements two equal teams. The existing darts/joust rules
+remain two-player. Their `?room=<match-id>` URL scopes both HTTP state and relay
+traffic; the existing X/O player tokens determine seats in those two games.
+New users join pub games through their room identity rather than X/O tokens.
 
-Every live game is two tiers:
+## Timing and authority
 
-1. **Authoritative: token-gated HTTP + an append-only log in Postgres.**
-   Identity is the tic-tac-toe player token (`?t=` once, then localStorage;
-   seat 0 = X = Anay, seat 1 = O = Jake). The client sends *inputs*, never
-   outcomes. The server re-runs the same deterministic sim the client uses
-   and stores the result. Clients poll (3.5 s idle, 650 ms while waiting on
-   the other seat), and a reload replays the log to rebuild the scene.
-2. **Spectacle: a Supabase Realtime broadcast channel** (`LiveLink`), one
-   channel name per game. Streams whatever makes the other person feel
-   present (aim, lance, lean) at ~22 Hz and echoes decisive moments the
-   instant they happen. Nothing on it is trusted: `SeenIds` dedupes the echo
-   against the poll, streams decay when packets stop, and if the socket
-   drops the game degrades to plain polling.
+- Air hockey runs on the server at 120 Hz, with 480 Hz contact substeps.
+  Clients collect 60 Hz numbered inputs and send batches at about 30 Hz.
+  Acknowledgements describe commands actually simulated, including a partial
+  command. Clients replay their outstanding inputs for the local mallet.
+  The puck and other mallets interpolate an 80 ms snapshot buffer; scores and
+  events always come from the server. Snapshots are sent at 25 Hz.
+- Joust input is sampled on the shared wall-clock timeline at 60 Hz and sent
+  in 50 ms batches. Late inputs replay the deterministic simulation. Prediction
+  is capped at six ticks ahead of received input. Only events whose inputs are
+  known on both sides are shown. An online pass never slows its input clock for
+  a cinematic. HTTP resolution remains the final score; failed trace uploads
+  are retried. After reconnect the complete bounded trace is resent.
+- Darts streams aim/launches and sends a change hint after the API commits a
+  throw, prompting the opponent to fetch the authoritative state immediately.
+  Polling remains the recovery path.
 
-Darts wires exactly this in `games/darts/src/net/` (its own copy for now;
-swapping it to the shared module is a mechanical change, not done yet so the
-darts build stays untouched today).
+## Connections
 
-## Wiring jousting
+`src/room/client.js` (in muppet-games) reconnects with exponential backoff and
+resumes its stored identity. A replaced tab does not reconnect and fight for
+control. An unexpectedly disconnected hockey player's seat is held for ten
+seconds, with the match paused until all seats reconnect. Intentional departure
+releases the seat. Restarting the server preserves identities and coins, but
+live matches are ephemeral and players rejoin a fresh table.
 
-Jousting differs from darts in one way that matters: both riders act **at the
-same time**. That is why `ServerClock` exists. Everything else is the darts
-recipe with the nouns changed.
+`net/live.js` obtains a short-lived signed ticket from `/api/live`. The game
+host checks it and fixes the sender's seat, game and room. It cannot be used to
+join another channel or impersonate another seat. Each connection has a rate
+ceiling and bounded outgoing buffering. Slow clients reconnect instead of
+accumulating an indefinitely stale stream. The game host uses `/ws` for lobby
+sessions and `/live` for darts/joust traffic.
 
-**The server half below already exists on this branch**: `supabase/migrations/0003_joust_tables.sql`, `lib/joust.mjs`, and `app/api/joust/{join,state,ready,trace,presence}`. Until the game calls `setResolver(resolvePass)` every pass resolves as a miss. Not yet exercised against a database; give it a `servercheck` like darts' before it is trusted.
+The lobby UI shows measured ping and jitter. This is still a single-process
+host: do not run several independent replicas behind a random load balancer.
+Scaling beyond one host requires routing each room consistently to one owner
+and replacing the local coin ledger with shared durable storage.
 
-### Tables (migration `0003_joust_tables.sql`, same conventions as 0002)
+## Host from someone's computer
 
-| table | what |
-|---|---|
-| `joust_matches` | `id text pk` (`'live'`), `state jsonb` (score, pass count, winner), `version`, `finished` |
-| `joust_passes` | `(match_id, pass_no) pk`, `seed int`, `starts_at timestamptz`, `traces jsonb` (`{"0": [...], "1": [...]}`), `result jsonb null`, `resolved_at` |
-| `joust_presence` | `(match_id, seat) pk`, `name`, `spec`, `drunk`, `seen_at` — identical to `darts_presence` |
+This is the default setup for now. The host runs the game process for the
+session; a cloud game server and Docker are not required. Install Node 22.12+
+and check out this repository. From the repository root:
 
-RLS on, no policies, app connects as the table owner. Same as everything else.
-
-### Routes (`app/api/joust/*`, all `force-dynamic`, all token-gated like darts)
-
-Every reply carries `now: Date.now()` so the client can `clock.sync(now, rtt)`.
-
-| route | does |
-|---|---|
-| `POST join` | presence upsert, returns seat, match state, open pass, `now` |
-| `GET state?since=<pass_no>` | match + passes newer than `since` + presence + `now` |
-| `POST ready` | marks this seat ready for the next pass. When both are ready the server inserts the pass with `seed` (random uint32) and `starts_at = now() + 3 s`, and returns it. Optimistic `version` check exactly like `saveMatch` in `lib/darts.mjs` |
-| `POST trace` | `{ pass_no, trace }` — this seat's input samples for the pass. Validated (length, sample ranges), stored into `traces[seat]`. When both seats' traces are present, resolve and store `result` |
-| `POST presence` | heartbeat with `drunk`, like darts |
-
-A pass whose second trace has not arrived 5 s after contact time is resolved
-with a **default trace** for the missing seat (lance straight, no lean), so a
-dropped connection is a miss, never a stall.
-
-### The pass, second by second
-
-```
-both ready ─► server: seed + starts_at (T0 = now + 3 s)
-   poll/echo ─► both clients: countdown on ServerClock.until(starts_at)
-T0           charge. Horses run the FIXED timeline: pos(t) is a pure function
-             of t, no player control of speed. Contact is at Tc (pick ~3.0 s).
-T0..Tc       each client samples its own input on a fixed 20 Hz tick from T0:
-               { t, yaw, pitch, lean, sway }   (mouse = lance, WASD = waist)
-             and streams the same samples on LiveLink event 'rider' (rate 45).
-             The opponent is animated from that stream, interpolated ~100 ms
-             behind. Drunk sway is applied to the INPUT before sampling, so
-             the trace already contains it and the resolver never guesses.
-Tc           client POSTs its trace. Locally: play the clash (dust, thud,
-             crowd gasp) but show NO verdict.
-Tc + 0.3-0.6 s  poll returns `result` ─► play the resolved impact as a slow-
-             motion replay: hit zone, points, unhorse. The latency becomes
-             the replay, which is what a broadcast would do anyway.
+```sh
+npm --prefix games/muppet-games ci    # first setup, or after dependency changes
+npm run host:games                   # builds and starts the game host
 ```
 
-### The resolver is pure and lives in one file
+The launcher prints the host's local address and addresses for friends on the
+same Wi-Fi/LAN. Everyone opens a printed LAN URL, creates/joins the same pub
+room, and uses Air Hockey → Table Settings to select a 1v1–4v4 table. Share the
+room invite link or the table's URL. `localhost` is only for the host computer;
+it does not point other players at the host. If prompted, allow Node on the
+host's private network. Guest Wi-Fi/client isolation may prevent LAN connections.
 
-`games/joust/src/game/pass.js` exports `resolvePass(traceA, traceB, seed)`:
-no three.js, no DOM, no `Math.random` (draw from `game/rng.js` seeded by
-`seed`, exactly as darts does per throw). `lib/joust.mjs` imports it the way
-`lib/darts.mjs` imports `replay.js`, so the browser preview and the server
-verdict are the same code by construction. Give it a `test/netcheck.mjs` that
-runs a few hundred passes down both paths and asserts identical results.
+Keep the host computer awake, connected, and the terminal open. **Ctrl+C stops
+hosting.** Switching hosts or restarting ends active matches; room identities
+and fictional coins remain in that host's private `server/data/ledger.json`.
+Do not run two hosts against the same ledger. Use `PORT` to choose another port
+if 8787 is occupied. `--no-build` reuses an existing build.
 
-Shape of the result the client plays back:
+### Friends joining from other networks
 
-```json
-{ "hits": [ { "seat": 0, "zone": "shield", "points": 1 },
-            { "seat": 1, "zone": "helm",   "points": 3 } ],
-  "unhorsed": 1, "score": [4, 7], "passNo": 3 }
+Install [cloudflared](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/)
+on the host, then run:
+
+```sh
+npm run host:games -- --internet
 ```
 
-### Client wiring, in the order darts does it
+This explicitly starts a [Cloudflare Quick Tunnel](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/)
+to the local game process and prints a temporary HTTPS invite address. It does
+not create a cloud game server or require router port forwarding. The host
+and guests should all open the printed HTTPS address before creating a room.
+Anyone with that address can access the game site; room membership is still
+selected with the room code. No source, environment files, or ledger are served.
 
-1. `readToken()` at boot (darts now does this too) so the player link sticks.
-2. `JoustSession` = a copy of `games/darts/src/net/online.js` with
-   `join/state/ready/trace` in place of `join/state/throw`, plus a
-   `ServerClock` fed from every reply.
-3. `new LiveLink({ channel: 'joust-live', seat, on: { rider, charge }, rate: { rider: 45 } })`.
-4. Remote passes are **played, never scored locally**. Whatever the local
-   preview thought happened at contact, the server's `result` is the one
-   that changes the scoreboard.
-5. Presence pill in the HUD from `seats[].online || liveSeats.has(theirSeat)`.
+The link works only while the computer and launcher are running. Restarting
+produces a new address, so share the new link; browser identities are stored per
+origin and will not automatically follow to a new tunnel address. These tunnels
+are for temporary testing, with no uptime guarantee. Tunnel interruption is
+reported and stops the session. The launcher never opens a tunnel in LAN mode.
+`CLOUDFLARED` can point to an existing binary; nothing is installed automatically.
 
-### Also needed, mechanical
+### Darts and Joust on the existing website
 
-- `games/joust` npm workspace with a Vite build into `public/joust/`
-  (gitignore it like `public/darts/`), one rewrite in `next.config.mjs`
-  (`/joust` → `/joust/index.html`), a `build` step in the root `package.json`.
-- `npm run migrate` picks up `0003` automatically (the runner applies every
-  file in order and is safe to re-run).
+The local game host also supplies their live relay. Their Next app, Postgres
+APIs, and existing player tokens stay in place. This launcher serves the Muppet
+pub/team games; it does not start Next or migrate the database. The bundled
+Muppet Darts page is the older offline version.
+
+For Darts/Joust live play, set these server-side variables:
+
+| Variable | Where | Meaning |
+|---|---|---|
+| `GAME_LIVE_SECRET` | Next + game host | Same random secret, at least 32 characters; never a browser variable |
+| `GAME_LIVE_URL` | Next | Public WSS endpoint, e.g. `wss://games.example.com/live` |
+| `GAME_ALLOWED_ORIGINS` | Game host | Comma-separated exact web origins allowed to connect, including the Next deployment |
+| `PUB_LEDGER` | Game host | Durable private ledger path |
+| `HOST`, `PORT` | Game host | Bind address and port |
+
+The launcher reads the repository root's ignored `.env.game-host` file. Put the
+host's `GAME_LIVE_SECRET` and `GAME_ALLOWED_ORIGINS` there, or provide them in the
+environment; the launcher never prints the secret. Set the same secret in Next
+and use the `wss://…/live` address printed by internet mode for `GAME_LIVE_URL`.
+A new temporary tunnel address requires updating that URL and restarting or
+redeploying Next. Do not put player tokens or database credentials in invite URLs.
+An HTTPS website needs a secure WSS relay; a plain LAN `ws://` address is for an
+HTTP local Next session, not the hosted HTTPS website.
+
+Existing `TTT_DATABASE_URL`, player tokens and other Next settings remain.
+Apply all migrations, including `0004_joust_pass_riders.sql`, before deploying
+the integrated jousting branch. Missing live configuration produces a visible
+connection failure for jousting; it never silently uses unrelated credentials.
+Darts can still fall back to polling.
+
+### Optional persistent deployment later
+
+The same process can move to a persistent host when needed. A container recipe is at `games/muppet-games/Dockerfile`. Build from the repo
+root: `docker build -f games/muppet-games/Dockerfile -t muppet-games .`.
+Run one persistent instance, mount `/data`, terminate HTTPS/WSS at the hosting
+proxy, and supply the variables above. Use `/health` for health checks.
+The image serves the pub and all Muppet games as well as the live relay.
+The Next app remains a separate deployment.
+
+## Verification
+
+`npm --prefix games/muppet-games run test:host` builds and exercises the local
+launcher, real HTTP/WebSocket traffic, shutdown, and a simulated tunnel failure.
+It never opens a public tunnel. `npm run test:network` runs the networking regressions. The air-hockey tests use
+0–200 ms simulated RTT, variable delay, skipped snapshots, rematches and stalls.
+The joust tests run 80 seeded passes with delayed, duplicated and dropped batches
+and compare every confirmed event with the authoritative simulation.
+The real WebSocket suite covers team seats, input acknowledgements, spectators,
+match/lobby isolation, reconnects and ticket-bound relay identities.
+
+For the real Postgres suites, start a throwaway cluster with
+`npm run test:pg start`, then run:
+
+```sh
+export JOUST_TEST_DATABASE_URL=postgres://postgres@127.0.0.1:54371/joust_test
+npm run test:joust
+npm run test:sql
+npm run test:pg stop
+```
+
+GitHub Actions runs these suites against an isolated Postgres service, builds
+Next, and builds the game-host container on every pull request.
+The legacy SQL suites report SKIPPED if that database is absent; a skipped suite
+is not evidence that SQL works. These local tests do not establish WAN latency
+or production capacity. Test geographically separated players before rollout.

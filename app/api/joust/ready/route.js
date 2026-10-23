@@ -1,9 +1,10 @@
-import { markReady, seatForToken } from "@/lib/joust.mjs";
+import { matchRequest } from "@/lib/match-context.mjs";
+import { handleJoust } from "@/lib/joust-api.mjs";
 export const dynamic = "force-dynamic";
-export async function POST(req) {
+async function handle(req) {
   const body = await req.json().catch(() => ({}));
-  const seat = seatForToken(body.token ?? null);
-  if (seat === null) return Response.json({ ok: false, error: "bad-token" }, { status: 401 });
-  const r = await markReady(seat);
-  return Response.json({ ...r, now: Date.now() }, { status: r.ok ? 200 : 400 });
+  const { status, body: out } = await handleJoust("ready", body);
+  return Response.json(out, { status });
 }
+
+export const POST = req => matchRequest(req,handle);

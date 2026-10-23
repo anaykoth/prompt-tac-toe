@@ -1,0 +1,10 @@
+.git
+**/node_modules
+**/dist
+.next
+public/darts
+public/joust
+**/.env*
+**/server/data
+**/recordings
+**/screenshots

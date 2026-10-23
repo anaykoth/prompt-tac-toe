@@ -14,7 +14,12 @@
     "build:joust": "npm run build --workspace=tilt-alley",
     "dev:joust": "npm run dev --workspace=tilt-alley",
     "test:joust": "npm run test --workspace=tilt-alley",
-    "test:shared": "node games/shared/test/livecheck.mjs"
+    "test:shared": "node games/shared/test/livecheck.mjs",
+    "test:pg": "scripts/test-pg.sh",
+    "test:network": "npm run test:shared && node games/joust/test/networkcheck.mjs && npm --prefix games/muppet-games run test:network",
+    "dev:games": "npm --prefix games/muppet-games run dev:pub",
+    "test:sql": "node games/shared/test/isolationcheck.mjs",
+    "host:games": "node games/muppet-games/scripts/host-games.mjs"
   },
   "dependencies": {
     "next": "^15.3.4",

@@ -1,8 +1,9 @@
+import { matchRequest } from "@/lib/match-context.mjs";
 import { getMatch, listThrows, listPresence, resetMatch, seatForToken, seatName, touchPresence } from "@/lib/darts.mjs";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(req) {
+async function handle(req) {
   const body = await req.json().catch(() => ({}));
   const seat = seatForToken(body.token ?? null);
   if (seat === null) return Response.json({ ok: false, error: "bad-token" }, { status: 401 });
@@ -19,3 +20,5 @@ export async function POST(req) {
     finished: g.finished, match: g.state.match, throws, seats,
   });
 }
+
+export const POST = req => matchRequest(req,handle);

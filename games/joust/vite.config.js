@@ -5,7 +5,7 @@ import { defineConfig } from 'vite';
 // server must be allowed to read outside this package root.
 export default defineConfig({
   base: '/joust/',
-  server: { host: true, port: 5174, fs: { allow: ['../..'] } },
+  server: { proxy: { "/api": "http://127.0.0.1:3000" }, host: true, port: 5174, fs: { allow: ['../..'] } },
   build: {
     target: 'es2022',
     outDir: '../../public/joust',

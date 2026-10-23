@@ -1,3 +1,4 @@
+import { readRoom } from "../../../shared/net/live.js";
 /**
  * Online play against the other seat.
  *
@@ -17,6 +18,7 @@ const HEARTBEAT_MS = 6000;
 export class OnlineSession {
   constructor(opts = {}) {
     this.token = opts.token ?? null;
+    this.room = opts.room ?? readRoom();
     this.onState = opts.onState ?? (() => {});
     this.onThrow = opts.onThrow ?? (() => {});
     this.onError = opts.onError ?? (() => {});
@@ -46,6 +48,7 @@ export class OnlineSession {
     this.active = true;
     this._absorb(r, { replayAll: true });
     this._schedule();
+    clearInterval(this._beat);
     this._beat = setInterval(() => this.heartbeat(), HEARTBEAT_MS);
     return r;
   }
@@ -87,8 +90,8 @@ export class OnlineSession {
     if (this._busy || !this.active) return;
     this._busy = true;
     try {
-      const url = `/api/darts/state?since=${this.lastSeq}${this.token ? `&t=${encodeURIComponent(this.token)}` : ''}`;
-      const res = await fetch(url, { cache: 'no-store' });
+      const url = `/api/darts/state?room=${encodeURIComponent(this.room)}&since=${this.lastSeq}${this.token ? `&t=${encodeURIComponent(this.token)}` : ''}`;
+      const res = await fetch(url, { cache: 'no-store',signal:AbortSignal.timeout(8000) });
       const r = await res.json();
       if (r?.ok) { this.connected = true; this._absorb(r); }
     } catch {
@@ -101,6 +104,10 @@ export class OnlineSession {
 
   _absorb(r, { replayAll = false } = {}) {
     this.seats = r.seats ?? this.seats;
+    // a rebuild is a deliberate reset: re-join after a new leg hands back a log
+    // whose seq counts from 0 again, and holding on to the old high-water mark
+    // would skip every row of it
+    if (replayAll) this.lastSeq = -1;
     const fresh = [];
     for (const t of r.throws ?? []) {
       if (t.seq <= this.lastSeq) continue;
@@ -111,8 +118,22 @@ export class OnlineSession {
     }
     this.match = r.match ?? this.match;
     this.version = r.version ?? this.version;
-    this.onState({ match: this.match, seats: this.seats, seat: this.seat, replayAll });
+    const state = { match: this.match, seats: this.seats, seat: this.seat, replayAll };
+
+    if (replayAll) {
+      // A rebuild is state first, then darts: the state change empties the
+      // board and only the visit in progress is planted back into it.
+      this.onState(state);
+      for (const t of currentVisitThrows(fresh, this.match)) this.onThrow(t, { replayAll });
+      return;
+    }
+    // An ordinary poll is darts first, then state. One response can carry both
+    // the last dart of a visit and the turn that ends it, and a board emptied
+    // before that dart is flown is a board with a dart of the dead visit left
+    // standing in it. Flown first, the flight holds the state off until it has
+    // landed, and the turn change then takes the whole visit out together.
     for (const t of fresh) this.onThrow(t, { replayAll });
+    this.onState(state);
   }
 
   /** Poll hard while we are waiting on their dart, gently the rest of the time. */
@@ -127,9 +148,9 @@ export class OnlineSession {
   async _post(path, body) {
     try {
       const res = await fetch(path, {
-        method: 'POST',
+        method: 'POST',signal:AbortSignal.timeout(8000),
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ token: this.token, ...body }),
+        body: JSON.stringify({ token: this.token, room:this.room, ...body }),
       });
       return await res.json();
     } catch {
@@ -137,6 +158,19 @@ export class OnlineSession {
       return null;
     }
   }
+}
+
+/**
+ * The throws of the visit in progress — the darts physically in the board.
+ * Same rule as `liveTips` in lib/darts.mjs: the visit began (3 - dartsLeft)
+ * throws before the next one. A fresh visit (dartsLeft 3) has an empty board.
+ */
+export function currentVisitThrows(throws = [], match) {
+  if (!throws.length || !match) return [];
+  const nextSeq = throws[throws.length - 1].seq + 1;
+  const dartsLeft = Number.isFinite(match.dartsLeft) ? match.dartsLeft : 3;
+  const visitStartSeq = nextSeq - (3 - dartsLeft);
+  return throws.filter((t) => t.seq >= visitStartSeq);
 }
 
 /** Token comes from ?t= once, then sticks — same convention as tic-tac-toe. */

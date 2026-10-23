@@ -4,6 +4,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes, randomUUID, randomInt, createHash } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
+import { attachRelay } from '../../shared/server/relay.js';
+import { InputQueue } from '../../shared/net/inputs.js';
+import { createMatch } from '../../shared/matches.js';
 import { Ledger } from './ledger.js';
 import { createHockeyState, resetHockey, stepHockey, constrainTarget } from '../src/air-hockey/physics.js';
 import { validHitStrength, normalizeHockeySettings } from '../src/air-hockey/tuning.js';
@@ -22,31 +25,42 @@ const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const roomCode = () => Array.from({ length: 6 }, () => ROOM_ALPHABET[randomInt(ROOM_ALPHABET.length)]).join('');
 
-export function createPubServer({ host = process.env.HOST || '127.0.0.1', port = Number(process.env.PORT || 8787), ledgerPath = process.env.PUB_LEDGER || path.join(ROOT, 'server/data/ledger.json'), roundTimeoutMs = 25000, challengeTimeoutMs = 20000, now = () => Date.now() } = {}) {
+export function createPubServer({ host = process.env.HOST || '127.0.0.1', port = Number(process.env.PORT || 8787), ledgerPath = process.env.PUB_LEDGER || path.join(ROOT, 'server/data/ledger.json'), roundTimeoutMs = 25000, challengeTimeoutMs = 20000, reconnectGraceMs = 10000, now = () => Date.now() } = {}) {
   const ledger = new Ledger(ledgerPath);
   const rooms = new Map();
   let shuttingDown = false;
 
+  const newTable = (id, teamSize=1) => {
+    const spec=createMatch({id,teamSizes:[teamSize,teamSize]});
+    const hockey=createHockeyState(undefined, teamSize);
+    return {...spec,seats:spec.roster.map(()=>null),targets:hockey.mallets.map(({x,y})=>({x,y})),hockey,restartVotes:new Set(),tick:0,epoch:randomUUID(),inputs:spec.roster.map(()=>new InputQueue())};
+  };
+  const playing = (room,table) => table.seats.every(id=>id && room.sessions.has(id));
+  const resetTable = table => { resetHockey(table.hockey); table.epoch=randomUUID();table.inputs=table.seats.map(()=>new InputQueue());table.targets=table.hockey.mallets.map(({x,y})=>({x,y})); };
   const getRoom = code => {
     if (!ledger.data.rooms[code]) return null;
-    if (!rooms.has(code)) rooms.set(code, { code, sessions: new Map(), positions: new Map(), challenges: new Map(), rounds: new Map(), results: [], seats: [null, null], targets: [{ x: 0, y: 1.05 }, { x: 0, y: -1.05 }], hockey: createHockeyState(), restartVotes: new Set(), tick: 0, dirty: false });
+    if (!rooms.has(code)) rooms.set(code, { code, sessions: new Map(), positions: new Map(), challenges: new Map(), rounds: new Map(), results: [], matches:new Map([["main",newTable("main")]]), disconnected:new Map(), dirty:false });
     return rooms.get(code);
   };
   const account = (room, id) => ledger.account(room.code, id);
   const position = (room, id) => room.positions.get(id) || NPCS.find(npc => npc.id === id) || { x: 0, y: 3.2, yaw: 0 };
-  const send = (socket, message) => { if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message)); };
+  const send = (socket, message) => {
+    if(socket.readyState!==WebSocket.OPEN)return;
+    if(socket.bufferedAmount>65536){if(message.type==='hockey.state'||message.type==='state')return;socket.close(1013,'Connection too slow; reconnect');return;}
+    socket.send(JSON.stringify(message));
+  };
   const broadcast = (room, message) => { for (const socket of room.sessions.values()) send(socket, message); };
   const publicRound = round => ({ id: round.id, participants: round.participants, participantIds: round.participants, stake: round.stake, deadline: round.deadline, status: 'choosing', locked: round.choices.map(Boolean) });
   const snapshot = room => ({
-    type: 'state', room: room.code,
-    players: Object.values(ledger.data.rooms[room.code].players).map(player => ({ id: player.id, name: player.name, coins: player.coins, ...position(room, player.id), z: position(room, player.id).y, online: room.sessions.has(player.id), activity: room.seats.includes(player.id) ? 'air-hockey' : [...room.rounds.values()].some(round => round.participants.includes(player.id)) ? 'rps' : 'pub' })),
+    type: 'state', room: room.code, matches:[...room.matches.values()].map(t=>({id:t.id,game:t.game,teamSizes:t.teamSizes,roster:t.roster.map((slot,i)=>({...slot,playerId:t.seats[i]})),playing:playing(room,t)})),
+    players: Object.values(ledger.data.rooms[room.code].players).map(player => ({ id: player.id, name: player.name, coins: player.coins, ...position(room, player.id), z: position(room, player.id).y, online: room.sessions.has(player.id), activity: [...room.matches.values()].some(t=>t.seats.includes(player.id)) ? 'air-hockey' : [...room.rounds.values()].some(round => round.participants.includes(player.id)) ? 'rps' : 'pub' })),
     npcs: NPCS.map(npc => ({ ...npc, z: npc.y, coins: account(room, npc.id).coins, online: true, activity: [...room.rounds.values()].some(round => round.participants.includes(npc.id)) ? 'rps' : 'pub' })),
     challenges: [...room.challenges.values()], rounds: [...room.rounds.values()].map(publicRound), results: room.results.slice(-8),
   });
   const publish = room => { broadcast(room, snapshot(room)); room.dirty = false; };
-  const hockeyPacket = room => ({ type: 'hockey.state', tableId: 'main', seats: room.seats, state: room.hockey, tick: room.tick, playing: room.seats.every(Boolean), restartVotes: [...room.restartVotes] });
-  const hockeyPublish = room => broadcast(room, hockeyPacket(room));
-  const busy = (room, id) => room.seats.includes(id) || [...room.rounds.values()].some(round => round.participants.includes(id)) || [...room.challenges.values()].some(challenge => challenge.participants.includes(id));
+  const hockeyPacket = (room, table, socket) => ({type:'hockey.state',tableId:table.id,matchId:table.id,epoch:table.epoch,inputEpoch:socket?.inputEpoch,seats:table.seats,teamSizes:table.teamSizes,state:table.hockey,tick:table.tick,acks:table.inputs.map(q=>q.snapshot()),playing:playing(room,table),restartVotes:[...table.restartVotes]});
+  const hockeyPublish = (room, table=room.matches.get('main')) => {for(const socket of room.sessions.values())if(socket.matchId===table.id)send(socket,hockeyPacket(room,table,socket));};
+  const busy = (room,id) => [...room.matches.values()].some(t=>t.seats.includes(id)) || [...room.rounds.values()].some(r=>r.participants.includes(id)) || [...room.challenges.values()].some(c=>c.participants.includes(id));
   const near = (room, a, b) => Math.hypot(position(room, a).x - position(room, b).x, position(room, a).y - position(room, b).y) <= 2.3;
 
   function finishRound(room, round, winnerId, reason) {
@@ -71,16 +85,15 @@ export function createPubServer({ host = process.env.HOST || '127.0.0.1', port =
     publish(room);
   }
 
-  function leaveHockey(room, id) {
-    const seat = room.seats.indexOf(id);
-    if (seat === -1) return;
-    room.seats[seat] = null;
-    room.restartVotes.clear();
-    hockeyPublish(room);
-    room.dirty = true;
+  function leaveHockey(room,id) {
+    for(const table of room.matches.values()) {
+      const seat=table.seats.indexOf(id);if(seat<0)continue;
+      table.seats[seat]=null;table.inputs[seat]=new InputQueue();table.restartVotes.clear();hockeyPublish(room,table);room.dirty=true;
+    }
+    room.disconnected.delete(id);
   }
 
-  function disconnected(socket) {
+  function disconnected(socket, code) {
     const room = socket.room;
     if (!room || room.sessions.get(socket.playerId) !== socket) return;
     room.sessions.delete(socket.playerId);
@@ -89,7 +102,8 @@ export function createPubServer({ host = process.env.HOST || '127.0.0.1', port =
       broadcast(room, { type: 'rps.cancelled', challengeId: challenge.id, reason: 'disconnect' });
     }
     for (const round of [...room.rounds.values()]) if (round.participants.includes(socket.playerId)) finishRound(room, round, null, 'disconnect');
-    leaveHockey(room, socket.playerId);
+    if(code===1000||code===1001)leaveHockey(room,socket.playerId);
+    else {room.disconnected.set(socket.playerId,now()+reconnectGraceMs);for(const table of room.matches.values())hockeyPublish(room,table);}
     publish(room);
   }
 
@@ -103,7 +117,6 @@ export function createPubServer({ host = process.env.HOST || '127.0.0.1', port =
     }
     if (!/^[A-Z2-9]{6}$/.test(code) || !ledger.data.rooms[code]) throw new Error('That room does not exist. Check the six-character code.');
     const room = getRoom(code);
-    if (room.sessions.size >= 24) throw new Error('This room is full.');
     let player;
     let token = packet.token;
     if (typeof token === 'string' && token.length > 0) {
@@ -112,11 +125,15 @@ export function createPubServer({ host = process.env.HOST || '127.0.0.1', port =
       player = Object.values(ledger.data.rooms[code].players).find(value => value.tokenHash === digest);
       if (!player) throw new Error('Your saved identity is not valid for this room.');
     } else {
+      if(room.sessions.size>=24)throw Error('This room is full.');
       token = randomBytes(32).toString('hex');
       player = { id: `player-${randomUUID()}`, name: cleanName(packet.name), tokenHash: hash(token), coins: 250 };
       ledger.transaction(() => { ledger.data.rooms[code].players[player.id] = player; });
     }
-    socket.playerId = player.id;
+    if(room.sessions.size>=24&&!room.sessions.has(player.id))throw Error('This room is full.');
+    socket.playerId = player.id; socket.matchId=String(packet.matchId||'main'); if(!room.matches.has(socket.matchId))socket.matchId='main'; socket.inputEpoch=randomUUID();
+    room.disconnected.delete(player.id);
+    for(const table of room.matches.values()){const seat=table.seats.indexOf(player.id);if(seat>=0){socket.matchId=table.id;table.inputs[seat]=new InputQueue();table.targets[seat]={x:table.hockey.mallets[seat].x,y:table.hockey.mallets[seat].y};}}
     socket.room = room;
     socket.lastMoveAt = now();
     socket.moveBudget = 0.25;
@@ -125,7 +142,7 @@ export function createPubServer({ host = process.env.HOST || '127.0.0.1', port =
     room.sessions.set(player.id, socket);
     if (previous && previous !== socket) { send(previous, { type: 'error', code: 'SESSION_REPLACED', message: 'This Muppet joined from another tab. This tab has released control.' }); previous.close(4001, 'Identity opened in another tab'); }
     send(socket, { type: 'welcome', id: player.id, room: code, token, state: snapshot(room) });
-    send(socket, hockeyPacket(room));
+    send(socket, hockeyPacket(room,room.matches.get(socket.matchId),socket));
     publish(room);
   }
 
@@ -135,8 +152,20 @@ export function createPubServer({ host = process.env.HOST || '127.0.0.1', port =
     const room = socket.room;
     const id = socket.playerId;
     if (!room || room.sessions.get(id) !== socket) throw new Error('Join a room first.');
+    const table=room.matches.get(socket.matchId);
     switch (packet.type) {
-      case 'ping': return send(socket, { type: 'pong', time: now() });
+      case 'ping': return send(socket, { type: 'pong', sent:packet.sent, time: now() });
+      case 'match.create': {
+        if(room.matches.size>=12)throw Error('This lobby already has twelve matches.');
+        if(![1,2,3,4].includes(packet.teamSize))throw Error('Choose teams of one to four.');
+        const id=randomBytes(6).toString('hex');room.matches.set(id,newTable(id,packet.teamSize));
+        send(socket,{type:'match.created',matchId:id});publish(room);break;
+      }
+      case 'match.watch': {
+        if(!room.matches.has(packet.matchId))throw Error('Unknown match');
+        leaveHockey(room,id);socket.matchId=packet.matchId;socket.inputEpoch=randomUUID();
+        send(socket,hockeyPacket(room,room.matches.get(socket.matchId),socket));publish(room);break;
+      }
       case 'move': {
         const x = packet.x, y = packet.y ?? packet.z, yaw = packet.yaw ?? 0;
         if (![x, y, yaw].every(Number.isFinite)) throw new Error('Position must contain finite numbers.');
@@ -211,49 +240,50 @@ export function createPubServer({ host = process.env.HOST || '127.0.0.1', port =
         break;
       }
       case 'hockey.join': {
-        if (room.seats.includes(id)) { send(socket, hockeyPacket(room)); break; }
+        if (table.seats.includes(id)) { send(socket, hockeyPacket(room,table,socket)); break; }
         if (busy(room, id)) throw new Error('Finish your current game before taking a seat.');
-        const seat = packet.seat === undefined ? room.seats.indexOf(null) : packet.seat;
-        if (![0, 1].includes(seat)) throw new Error('Both seats are occupied. You can spectate.');
-        if (room.seats[seat]) throw new Error('That seat is occupied.');
-        room.seats[seat] = id;
-        room.restartVotes.clear();
-        if (room.seats.every(Boolean)) {
-          resetHockey(room.hockey);
-          room.targets = room.hockey.mallets.map(mallet => ({ x: mallet.x, y: mallet.y }));
+        const seat = packet.seat === undefined ? table.seats.indexOf(null) : packet.seat;
+        if (!Number.isInteger(seat)||seat<0||seat>=table.seats.length) throw new Error('No playing seat is available. You can spectate.');
+        if (table.seats[seat]) throw new Error('That seat is occupied.');
+        table.seats[seat] = id;
+        table.restartVotes.clear();
+        if (table.seats.every(Boolean)) {
+          resetTable(table);
         }
-        hockeyPublish(room);
+        hockeyPublish(room,table);
         publish(room);
         break;
       }
       case 'hockey.leave': leaveHockey(room, id); publish(room); break;
       case 'hockey.input': {
-        const seat = room.seats.indexOf(id);
+        const seat = table.seats.indexOf(id);
         if (seat === -1) throw new Error('Take a seat before moving a mallet.');
+        if(packet.epoch!==undefined&&packet.epoch!==table.epoch)break;
+        if(packet.inputEpoch!==undefined&&packet.inputEpoch!==socket.inputEpoch)break;
+        if(packet.commands){table.inputs[seat].push(packet.commands);break;}
         if (![packet.x, packet.y].every(Number.isFinite)) throw new Error('Mallet position must contain finite numbers.');
-        room.targets[seat] = constrainTarget({ x: packet.x, y: packet.y }, seat);
+        table.targets[seat] = constrainTarget({ x: packet.x, y: packet.y }, seat);
         break;
       }
       case 'hockey.settings': {
-        if (room.seats[0] !== id) throw new Error('Only the Sun player can set the shared hit strength.');
-        if (room.seats.every(Boolean) && room.hockey.status === 'playing') throw new Error('Change hit strength between points or while waiting for a player.');
+        if (table.seats[0] !== id) throw new Error('Only the Sun player can set the shared hit strength.');
+        if (table.seats.every(Boolean) && table.hockey.status === 'playing') throw new Error('Change hit strength between points or while waiting for a player.');
         if (!validHitStrength(packet.hitStrength)) throw new Error('Hit strength must be a number between 0.20 and 1.00.');
         // Room opponents are both human. A client cannot claim a CPU power
         // multiplier or privately change its own mallet's strike strength.
         if (Object.keys(packet).some(key => !['type', 'hitStrength'].includes(key))) throw new Error('Only shared hit strength can be changed.');
-        room.hockey.settings = normalizeHockeySettings({ hitStrength: packet.hitStrength, seatPower: [1, 1] });
-        hockeyPublish(room);
+        table.hockey.settings = normalizeHockeySettings({ hitStrength: packet.hitStrength, seatPower: [1, 1] });
+        hockeyPublish(room,table);
         break;
       }
       case 'hockey.restart': {
-        if (!room.seats.includes(id)) throw new Error('Only seated players can ask for a rematch.');
-        room.restartVotes.add(id);
-        if (room.seats.filter(Boolean).every(playerId => room.restartVotes.has(playerId))) {
-          resetHockey(room.hockey);
-          room.targets = room.hockey.mallets.map(mallet => ({ x: mallet.x, y: mallet.y }));
-          room.restartVotes.clear();
+        if (!table.seats.includes(id)) throw new Error('Only seated players can ask for a rematch.');
+        table.restartVotes.add(id);
+        if (table.seats.filter(Boolean).every(playerId => table.restartVotes.has(playerId))) {
+          resetTable(table);
+          table.restartVotes.clear();
         }
-        hockeyPublish(room);
+        hockeyPublish(room,table);
         break;
       }
       default: throw new Error('Unknown room message.');
@@ -279,19 +309,22 @@ export function createPubServer({ host = process.env.HOST || '127.0.0.1', port =
     if (request.method === 'HEAD') response.end(); else fs.createReadStream(filename).pipe(response);
   });
   const websocketServer = new WebSocketServer({ noServer: true, maxPayload: 8192 });
+  const relayServer=new WebSocketServer({noServer:true,maxPayload:65536});
+  const stopRelay=attachRelay(relayServer);
   httpServer.on('upgrade', (request, socket, head) => {
     let allowed = true;
     try {
-      if (new URL(request.url, 'http://localhost').pathname !== '/ws') allowed = false;
+      if (!['/ws','/live'].includes(new URL(request.url, 'http://localhost').pathname)) allowed = false;
       if (request.headers.origin) {
         const originHost = new URL(request.headers.origin).hostname;
         const requestHost = new URL(`http://${request.headers.host}`).hostname;
         const local = value => ['127.0.0.1', 'localhost', '[::1]'].includes(value);
-        if (originHost !== requestHost && !(local(originHost) && local(requestHost))) allowed = false;
+        if (originHost !== requestHost && !(local(originHost) && local(requestHost)) && !(process.env.GAME_ALLOWED_ORIGINS||'').split(',').includes(request.headers.origin)) allowed = false;
       }
     } catch { allowed = false; }
     if (!allowed) { socket.write('HTTP/1.1 403 Forbidden\r\n\r\n'); socket.destroy(); return; }
-    websocketServer.handleUpgrade(request, socket, head, ws => websocketServer.emit('connection', ws, request));
+    const target=new URL(request.url,'http://localhost').pathname==='/live'?relayServer:websocketServer;
+    target.handleUpgrade(request,socket,head,ws=>target.emit('connection',ws,request));
   });
   websocketServer.on('connection', socket => {
     socket.packetWindow = now(); socket.packetCount = 0; socket.alive = true;
@@ -305,7 +338,7 @@ export function createPubServer({ host = process.env.HOST || '127.0.0.1', port =
         handle(socket, JSON.parse(data.toString()));
       } catch (error) { send(socket, { type: 'error', code: 'INVALID_ACTION', message: error instanceof SyntaxError ? 'Invalid JSON message.' : error.message }); }
     });
-    socket.on('close', () => { clearTimeout(helloTimeout); disconnected(socket); });
+    socket.on('close', code => { clearTimeout(helloTimeout); disconnected(socket,code); });
     socket.on('error', () => {});
   });
 
@@ -316,13 +349,18 @@ export function createPubServer({ host = process.env.HOST || '127.0.0.1', port =
     simulationBudget += Math.min(0.1, (currentTime - previousSimulationTime) / 1000);
     previousSimulationTime = currentTime;
     while (simulationBudget >= 1 / 120) {
-      for (const room of rooms.values()) if (room.seats.every(Boolean)) { stepHockey(room.hockey, room.targets, 1 / 120); room.tick++; }
+      for(const room of rooms.values())for(const table of room.matches.values())if(playing(room,table)){
+        const targets=table.inputs.map((q,i)=>q.target(table.targets[i]));
+        stepHockey(table.hockey,targets,1/120);table.targets=targets.map(({x,y})=>({x,y}));
+        table.inputs.forEach(q=>q.stepped());table.tick++;
+      }
       simulationBudget -= 1 / 120;
     }
   }, 8);
-  const snapshots = setInterval(() => { for (const room of rooms.values()) if (room.sessions.size) hockeyPublish(room); }, 40);
+  const snapshots = setInterval(() => { for(const room of rooms.values())if(room.sessions.size)for(const table of room.matches.values())hockeyPublish(room,table); }, 40);
   const maintenance = setInterval(() => {
     for (const room of rooms.values()) {
+      for(const [id,deadline] of room.disconnected)if(deadline<now())leaveHockey(room,id);
       for (const challenge of room.challenges.values()) if (challenge.deadline < now()) { room.challenges.delete(challenge.id); broadcast(room, { type: 'rps.cancelled', challengeId: challenge.id, reason: 'timeout' }); room.dirty = true; }
       for (const round of [...room.rounds.values()]) if (round.deadline < now()) finishRound(room, round, null, 'timeout');
       if (room.dirty) publish(room);
@@ -333,12 +371,12 @@ export function createPubServer({ host = process.env.HOST || '127.0.0.1', port =
       if (!socket.alive) { socket.terminate(); continue; }
       socket.alive = false; socket.ping();
     }
-  }, 10000);
+  }, 2500);
   return {
     httpServer, ledger,
     listen: () => new Promise((resolve, reject) => { httpServer.once('error', reject); httpServer.listen(port, host, () => { httpServer.off('error', reject); resolve(httpServer.address()); }); }),
     close: async () => {
-      shuttingDown = true;
+      shuttingDown = true;stopRelay();await new Promise(resolve=>relayServer.close(resolve));
       for (const timer of [simulation, snapshots, maintenance, heartbeat]) clearInterval(timer);
       for (const room of rooms.values()) for (const round of [...room.rounds.values()]) finishRound(room, round, null, 'server-shutdown');
       for (const socket of websocketServer.clients) socket.terminate();

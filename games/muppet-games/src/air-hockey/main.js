@@ -1,7 +1,7 @@
 import './style.css';
 import { HockeyScene } from './scene.js';
 import { HOCKEY, createHockeyState, stepHockey, constrainTarget } from './physics.js';
-import { predictHockeyMotion } from './prediction.js';
+import { HockeyNetwork } from './network.js';
 import { HOCKEY_PRESETS, HOCKEY_CPU_POWER, hockeyPresetFor, normalizeHockeySettings } from './tuning.js';
 import { RoomClient } from '../room/client.js';
 
@@ -19,6 +19,8 @@ let difficulty = 'pub', ownSeat = 0, seats = [null, null];
 let targets = [{ x: 0, y: 1.25 }, { x: 0, y: -1.25 }];
 let cpuPlan = { x: 0, y: -1.25 }, cpuClock = 0;
 let client = null, connecting = false, onlineReady = false, lastSend = 0;
+const netcode = new HockeyNetwork();
+let matchId=new URLSearchParams(location.search).get('match')||'main';
 let lastTime = performance.now(), animationTime = 0, excitement = 0;
 let hitCount = 0, bankCount = 0, goalCount = 0, nextQuote = 0;
 let soundEnabled = true;
@@ -51,7 +53,7 @@ function noticeEvents() {
   }
   if (state.goals > goalCount) {
     goalCount = state.goals; audioHit('goal'); excitement = 1;
-    const ours = state.lastGoal === ownSeat;
+    const ours = state.lastGoal === (ownSeat === null ? -1 : ownSeat%2);
     const comments = ours ? ['That counted. I was looking this time.', 'Oh, that was a lovely little angle.', 'I taught them that. Spiritually.'] : ['Excellent. Now you know where the goal is.', 'A setback! Character development!', 'You almost had that. Again.'];
     quote(comments[(state.goals - 1) % comments.length]);
   }
@@ -101,32 +103,32 @@ function updateHUD() {
     $('seat-label').textContent = 'YOU ARE SUN';
   } else {
     const players = client?.state?.players || [];
-    $('sun-name').textContent = players.find(p => p.id === seats[0])?.name || 'OPEN SEAT';
-    $('moon-name').textContent = players.find(p => p.id === seats[1])?.name || 'OPEN SEAT';
-    $('seat-label').textContent = ownSeat === null ? 'AT THE RAIL' : `YOU ARE ${ownSeat === 0 ? 'SUN' : 'MOON'}`;
+    $('sun-name').textContent = seats.filter((_,i)=>i%2===0).map(id=>players.find(p=>p.id===id)?.name||'OPEN').join(' + ');
+    $('moon-name').textContent = seats.filter((_,i)=>i%2===1).map(id=>players.find(p=>p.id===id)?.name||'OPEN').join(' + ');
+    $('seat-label').textContent = ownSeat === null ? 'AT THE RAIL' : `YOU ARE ${ownSeat % 2 === 0 ? 'SUN' : 'MOON'}`;
   }
   $('control-label').textContent = ownSeat === null ? '· SPECTATING' : '· MOUSE TO MOVE';
-  canvas.setAttribute('aria-label', ownSeat === null ? 'Air hockey table. You are spectating.' : `Air hockey. Move your mouse over your half of the physical table to control the ${ownSeat === 0 ? 'orange' : 'mint'} mallet. Space pauses practice; R restarts.`);
+  canvas.setAttribute('aria-label', ownSeat === null ? 'Air hockey table. You are spectating.' : `Air hockey. Move your mouse over your half of the physical table to control the ${ownSeat % 2 === 0 ? 'orange' : 'mint'} mallet. Space pauses practice; R restarts.`);
   $('pause').disabled = mode === 'room';
   $('restart').disabled = mode === 'room' && ownSeat === null;
-  $('join-sun').disabled = !onlineReady || Boolean(seats[0]);
-  $('join-moon').disabled = !onlineReady || Boolean(seats[1]);
+  $('join-sun').disabled = !onlineReady || seats.every((id,i)=>i%2!==0||id);
+  $('join-moon').disabled = !onlineReady || seats.every((id,i)=>i%2!==1||id);
   $('spectate').disabled = !onlineReady || ownSeat === null;
-  if (mode === 'room' && (!onlineReady || !seats[0] || !seats[1])) {
-    showMessage(onlineReady ? 'THE ROOM IS OPEN' : 'A SHARED TABLE', onlineReady ? 'ONE MORE?' : 'BRING A FRIEND.', ownSeat === null ? 'Take an open seat. Your friend takes the other.' : 'Your friend can take the other seat in this room.');
+  if (mode === 'room' && (!onlineReady || !seats.every(Boolean) || !netcode.playing)) {
+    showMessage(onlineReady ? 'THE ROOM IS OPEN' : 'A SHARED TABLE', onlineReady ? `${seats.filter(id=>!id).length || 'RECONNECTING'} TO JOIN` : 'BRING YOUR TEAM.', ownSeat === null ? 'Choose a team in Table Settings. Share this room and table with your friends.' : 'Waiting for the rest of the table. Share this page’s link with your team.');
   } else if (paused) showMessage('TAKE A BREATH', 'ON THE RAIL.', 'Press Space or Pause to come back.');
   else if (state.status === 'finished') {
     const player = state.winner === 0 ? $('sun-name').textContent : $('moon-name').textContent;
-    showMessage('THE ROOM SAW EVERYTHING', `${player} WINS.`, mode === 'room' ? 'Both players choose New Game for a rematch.' : 'A good game. A better story. Go again?', true, true);
+    showMessage('THE ROOM SAW EVERYTHING', `${player} WINS.`, mode === 'room' ? 'Everyone at the table chooses New Game for a rematch.' : 'A good game. A better story. Go again?', true, true);
   } else if (state.status === 'goal') {
-    showMessage('THAT ONE COUNTS', state.lastGoal === ownSeat ? 'LOVELY TOUCH.' : 'WHAT A SHOT.', `${state.score[0]} — ${state.score[1]} · ${state.servingSeat === ownSeat ? 'Your' : 'Their'} serve next.`, true);
+    showMessage('THAT ONE COUNTS', state.lastGoal === (ownSeat === null ? -1 : ownSeat%2) ? 'LOVELY TOUCH.' : 'WHAT A SHOT.', `${state.score[0]} — ${state.score[1]} · ${state.servingSeat === (ownSeat === null ? -1 : ownSeat%2) ? 'Your' : 'Their'} serve next.`, true);
   } else if (!started && mode === 'practice') showMessage('THE ROOM IS WATCHING', 'YOUR SERVE.', 'Move onto the table. Push through the puck.');
   else $('table-message').hidden = true;
 }
 
 function restart() {
   if (mode === 'room') {
-    client?.send('hockey.restart'); quote('Rematch requested. The other player gets a vote.'); return;
+    client?.send('hockey.restart'); quote('Rematch requested. Everyone at the table gets a vote.'); return;
   }
   state = createHockeyState({ hitStrength: practiceStrength, seatPower: [1, HOCKEY_CPU_POWER[difficulty]] }); targets = state.mallets.map(m => ({ x: m.x, y: m.y }));
   started = false; paused = false; hitCount = 0; bankCount = 0; goalCount = 0;
@@ -198,25 +200,33 @@ async function connectRoom() {
   const nextClient = new RoomClient(); client = nextClient;
   nextClient.on(message => {
     if (client !== nextClient) return;
+    if(message.type==='welcome'){onlineReady=true;netcode.reset();}
+    if(message.type==='state'||message.type==='welcome'){
+      const matches=(message.state??message).matches??[];
+      const select=$('match-select');select.replaceChildren(...matches.map(m=>new Option(`${m.teamSizes.join('v')} · ${m.id}`,m.id)));
+      select.value=matchId;
+    }
+    if(message.type==='match.created'){matchId=message.matchId;nextClient.send('match.watch',{matchId});}
+    if(message.type==='network')$('connection-status').textContent=`${Math.round(message.rttMs)} ms ping · ${Math.round(message.jitterMs)} ms jitter`;
     if (message.type === 'hockey.state') {
-      seats = message.seats || [null, null];
-      if (mode !== 'room') return;
-      const previousSeat = ownSeat;
-      ownSeat = seats.indexOf(nextClient.id); if (ownSeat < 0) ownSeat = null;
-      state = structuredClone(message.state);
-      if (ownSeat !== previousSeat && ownSeat !== null) targets[ownSeat] = { x: state.mallets[ownSeat].x, y: state.mallets[ownSeat].y };
-      // Opponent prediction holds their observed velocity for one snapshot.
-      for (let i = 0; i < 2; i++) if (i !== ownSeat) targets[i] = constrainTarget({ x: state.mallets[i].x + state.mallets[i].vx * .025, y: state.mallets[i].y + state.mallets[i].vy * .025 }, i);
-      if (state.goals < goalCount || state.hits < hitCount) { hitCount = state.hits; goalCount = state.goals; bankCount = state.banks; }
+      matchId=message.matchId;seats=message.seats||[null,null];$('match-select').value=matchId;
+      if(mode!=='room')return;
+      const previousSeat=ownSeat;
+      ownSeat=seats.indexOf(nextClient.id);if(ownSeat<0)ownSeat=null;
+      netcode.absorb(message,ownSeat);
+      if(ownSeat!==previousSeat&&ownSeat!==null)targets[ownSeat]={...message.state.mallets[ownSeat]};
+      state=netcode.advance(0,targets[ownSeat])||message.state;
+      if(state.goals<goalCount||state.hits<hitCount){hitCount=state.hits;goalCount=state.goals;bankCount=state.banks;}
+      const url=new URL(location.href);url.searchParams.set('match',matchId);history.replaceState(null,'',url);
     } else if (message.type === 'error') {
       $('connection-status').textContent = message.message || 'Could not join this table.';
     } else if (message.type === 'close' || message.type === 'disconnected') {
-      onlineReady = false; $('connection-status').textContent = 'Disconnected. Join again to return to the room.';
+      onlineReady = false; $('connection-status').textContent = message.reconnecting?'Reconnecting… your seat is reserved.':'Disconnected. Join again to return to the room.';
       $('network-note').textContent = 'CONNECTION LOST';
     }
   });
   try {
-    await nextClient.connect({ room, name: viewerName });
+    await nextClient.connect({ room, name: viewerName, matchId });
     if (client !== nextClient) return;
     onlineReady = true;
     $('connection-status').textContent = `Room ${nextClient.room}. Choose a seat or watch.`;
@@ -231,8 +241,10 @@ async function connectRoom() {
 }
 $('connect-room').onclick = connectRoom;
 $('room-code').addEventListener('keydown', e => { if (e.key === 'Enter') connectRoom(); });
-$('join-sun').onclick = () => { client?.send('hockey.join', { seat: 0 }); $('settings-panel').hidden = true; };
-$('join-moon').onclick = () => { client?.send('hockey.join', { seat: 1 }); $('settings-panel').hidden = true; };
+$('join-sun').onclick = () => { client?.send('hockey.join', { seat:seats.findIndex((id,i)=>!id&&i%2===0) }); $('settings-panel').hidden = true; };
+$('join-moon').onclick = () => { client?.send('hockey.join', { seat:seats.findIndex((id,i)=>!id&&i%2===1) }); $('settings-panel').hidden = true; };
+$('new-match').onclick=()=>client?.send('match.create',{teamSize:Number($('team-size').value)});
+$('match-select').onchange=e=>{matchId=e.target.value;client?.send('match.watch',{matchId});};
 $('spectate').onclick = () => client?.send('hockey.leave');
 window.addEventListener('pagehide', () => { if (ownSeat !== null && mode === 'room') client?.send('hockey.leave'); client?.close(); });
 
@@ -241,8 +253,9 @@ function frame(now) {
   excitement = Math.max(0, excitement - dt * .24);
   if (mode === 'practice' && started && !paused) { updateCPU(dt); stepHockey(state, targets, dt); }
   if (mode === 'room' && onlineReady) {
-    if (ownSeat !== null && now - lastSend > 25) { lastSend = now; client.send('hockey.input', targets[ownSeat]); }
-    if (seats[0] && seats[1]) predictHockeyMotion(state, targets, dt);
+    state=netcode.advance(dt,targets[ownSeat])||state;
+    if(ownSeat!==null&&now-lastSend>25){lastSend=now;const commands=netcode.batch();if(commands.length&&client.send('hockey.input',{commands,epoch:netcode.epoch,inputEpoch:netcode.inputEpoch}))netcode.markSent(commands);}
+    if(netcode.metrics.stalled)$('connection-status').textContent='Waiting for the server…';
   }
   noticeEvents(); updateHUD(); drawGame(dt); requestAnimationFrame(frame);
 }
@@ -267,8 +280,8 @@ function updateTuningUI() {
   $('hit-settings-note').textContent = mode === 'practice'
     ? 'Less punch, same quick hands. Incoming shots still rebound.'
     : canEdit
-      ? 'Shared by both players, each at 1.00×. Sun can tune while waiting or between points.'
-      : 'Same strength for both players. Sun can change it while waiting or between points.';
+      ? 'Shared by every player, each at 1.00×. The Sun captain can tune between points.'
+      : 'Same strength for every player. The Sun captain can tune between points.';
 }
 
 function changeHitStrength(value) {
