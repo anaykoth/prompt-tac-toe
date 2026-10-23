@@ -15,7 +15,9 @@
     "test:phone": "node test/golfplaycheck.mjs && node test/puttingcheck.mjs && node test/shotqueuecheck.mjs && node test/shottrackingcheck.mjs && node test/swinganalysischeck.mjs && node test/partycheck.mjs && node test/coursecheck.mjs && node test/restinggripcheck.mjs && node test/cameralifecyclecheck.mjs && node test/cameracheck.mjs && node test/swingrecordingcheck.mjs && node test/addresscheck.mjs && node test/motioncheck.mjs && node test/phonecontrollercheck.mjs && node test/phonecheck.mjs",
     "analyze:golf": "node scripts/analyze-golf-shots.mjs",
     "analyze:golf-baseline": "node scripts/analyze-golf-baseline.mjs",
-    "test:network": "node test/networkcheck.mjs && node test/stackcheck.mjs"
+    "test:network": "node test/networkcheck.mjs && node test/stackcheck.mjs",
+    "host": "node scripts/host-games.mjs",
+    "test:host": "node test/hostcheck.mjs"
   },
   "dependencies": {
     "js-aruco2": "^2.0.0",

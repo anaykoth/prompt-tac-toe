@@ -41,6 +41,7 @@ jobs:
           done
       - run: npm test && npm run test:shared && npm run test:darts && npm run test:joust && npm run test:sql
       - run: npm --prefix games/muppet-games test
+      - run: npm --prefix games/muppet-games run test:host
       - run: npm run build
       - name: Build persistent game host
         run: docker build -f games/muppet-games/Dockerfile -t multiplayer-test .

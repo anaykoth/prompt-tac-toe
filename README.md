@@ -66,6 +66,19 @@ tic-tac-toe are unaffected either way.
 
 ## Multiplayer stack
 
+For now, one player's computer hosts the session. From the repository root:
+
+```sh
+npm --prefix games/muppet-games ci
+npm run host:games
+```
+
+Share the printed LAN link. For friends on other networks, install `cloudflared`
+and use `npm run host:games -- --internet` for a temporary HTTPS link. Keep the
+host computer awake and the terminal open. Pub/team hockey run immediately;
+Darts/Joust on the existing website need the relay settings in the guide below.
+
+
 See [the shared multiplayer guide](games/shared/README.md) for 1v1–4v4
 air hockey, multiple tables per lobby, input replay, the dedicated live relay,
 local testing and deployment. Live game traffic no longer uses the CRM project.

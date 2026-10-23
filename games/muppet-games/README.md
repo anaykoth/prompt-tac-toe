@@ -18,7 +18,7 @@ server. Open a room, or jump straight into a game from the welcome screen.
 | Shared pub | `/pub.html` | Walk with WASD or click the floor. Approach a Muppet, press E, and offer a coin wager. NPCs and other players can play RPS. |
 | Pool | `/pool.html` | Eight ball against a CPU or local hot-seat opponent. Switch Classic/Contact controls on the title screen or in Tab settings. |
 | Pool Lab | `/pool-lab.html` | The existing experimental pub, now with the same selectable Pool controls. |
-| Air Club | `/air-hockey.html` | First-person 3D air hockey with Muppet hands, a physical opponent, rowdy crowd and adjustable drunken vision. Three CPU levels, first to seven. Enter a room code for two-player online play or spectating. |
+| Air Club | `/air-hockey.html` | First-person 3D air hockey with Muppet hands, a physical opponent, rowdy crowd and adjustable drunken vision. Three CPU levels, first to seven. Enter a room code for 1v1–4v4 team play or spectating. |
 | The Woolpark | `/baseball.html` | First-person 3D batting, mouse-driven pitching, and three-inning CPU games. Real bat contact, curved pitches, fielders and automatic baserunning. |
 | Splinter Alley | `/index.html` | The existing Darts game. See [the Darts guide](docs/DARTS.md). |
 
@@ -311,7 +311,7 @@ Air Hockey's **Table Settings → Mallet → Puck** offers Gentle (0.30×), Pub
 (0.50×, default), Original (1.00×), and a fine slider. This changes the strike
 impulse without slowing your hand. Barry, Dot and The Shark have personal strike
 factors of 0.70×, 0.90× and 1.15×. In shared rooms, Sun can change the common
-factor before play or between points; both human players receive the same factor.
+factor before play or between points; every human player receives the same factor.
 
 ## Baseball: put your hands into it
 
@@ -363,21 +363,31 @@ samples per take. If browser storage fills, download before leaving the page.
 
 ## Host a room for friends
 
+One person's computer hosts the games for the session. With Node 22.12+ installed,
+run from this directory:
+
 ```sh
-npm run build
-HOST=0.0.0.0 npm run server
+npm ci
+npm run host
 ```
 
-Open `http://YOUR-LAN-IP:8787/pub.html` on the host and friends' computers. The
-host creates a room and shares its code or invite link. Allow Node through the
-host firewall if prompted. One process serves the built games and WebSockets;
-keep it running for the room to stay available. Internet hosting additionally
-needs HTTPS/WSS and a persistent Node process.
+The launcher builds the games and prints links for the host and other computers
+on the same Wi-Fi/LAN. Everyone opens the LAN link, then the host creates a room
+and shares its invite link. Keep the computer awake and the terminal open; Ctrl+C
+ends hosting. No cloud game server or Docker is required.
 
-Air Hockey offers Sun/Moon seats and spectators. Both players vote to restart a
-match. Pool and Darts remain CPU/local hot-seat games; their room links return
-you to the shared pub. Online support currently covers pub presence, RPS and
-Air Hockey. Long-distance Air Hockey latency still needs human playtesting.
+For friends on other networks, install `cloudflared` and run
+`npm run host -- --internet`. This explicitly creates a temporary HTTPS link to
+this computer. Share that link; it expires when hosting stops and changes on
+restart. The default command does not open a public tunnel.
+See [the shared hosting guide](../shared/README.md#host-from-someones-computer)
+for network details and Darts/Joust relay configuration.
+
+Air Hockey supports 1v1–4v4 teams, separate tables and spectators. Every seated
+player votes to restart. Pool and this folder's older Darts remain CPU/local
+hot-seat games; their room links return to the shared pub. The current online
+Darts and Joust live in the root Next app. Long-distance play still needs human
+playtesting on the group's actual connections.
 
 Each player starts with 250 **fictional pub coins** per room. RPS requires an
 accepted stake, locks choices privately, and settles on the server. Draws,
