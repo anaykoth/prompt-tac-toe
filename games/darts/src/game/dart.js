@@ -134,6 +134,32 @@ export class Dart {
   hide() { this.mesh.visible = false; this.trail.visible = false; }
 
   /**
+   * Put the dart straight into the board, already settled: what a rebuild does
+   * after a reload or a late join, so the log becomes a board without every
+   * dart being flown again. Registers in `world.stuck` exactly as a landed
+   * flight does, so later darts can still deflect off it.
+   */
+  plant(point, dir, world) {
+    this.pos.copy(point);
+    this.prev.copy(point);
+    this.vel.set(0, 0, 0);
+    this.quat.setFromUnitVectors(FORWARD, _v.copy(dir).normalize());
+    this.roll = 0;                   // a pooled dart keeps the roll of its last flight
+    this.state = 'stuck';
+    this.stuckT = 2;                 // past the impact shiver, at full droop
+    this.age = 0;
+    this.acc = 0;
+    this.bounced = false;
+    this.deflects = 0;
+    this.result = null;
+    this._syncMesh();                // ...which also puts `tip` on the point
+    this.mesh.scale.setScalar(1);    // the clear-out tween shrinks it on the way out
+    this.mesh.visible = true;
+    this.trail.visible = false;
+    world.stuck.push(this);
+  }
+
+  /**
    * @param {object} opts  wobble/roll/magnus, plus `seed` — pass the same seed
    *   and the same pos/vel and the flight is bit-identical anywhere it runs.
    */

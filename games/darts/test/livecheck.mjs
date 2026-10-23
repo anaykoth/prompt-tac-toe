@@ -3,6 +3,7 @@
 // poll path from flying the same dart twice.
 import assert from 'node:assert';
 import { LiveLink, SeenSeeds, AIM_MS } from '../src/net/live.js';
+import { OnlineSession, currentVisitThrows } from '../src/net/online.js';
 
 function fakeChannel() {
   const handlers = { broadcast: {}, presence: {} };
@@ -104,4 +105,73 @@ function makeLink(seat = 0) {
   assert.equal(seen.fresh(4), false);               // recent ones still remembered
 }
 
-console.log('livecheck ok — echo/poll dedupe, throttle, seat filtering, presence');
+// --- a rebuild plants only the visit in progress -------------------------
+{
+  const log = (n) => Array.from({ length: n }, (_, i) => ({ seq: i, seat: i < 3 ? 0 : 1, launch: { seed: i + 1 } }));
+  assert.deepEqual(currentVisitThrows([], { dartsLeft: 2 }), []);
+  assert.deepEqual(currentVisitThrows(log(5), null), []);
+  // mid-visit: 5 throws on the log, seat 1 has thrown 2 of its 3 -> the last two
+  assert.deepEqual(currentVisitThrows(log(5), { dartsLeft: 1 }).map((t) => t.seq), [3, 4]);
+  // one dart in: just the last one
+  assert.deepEqual(currentVisitThrows(log(4), { dartsLeft: 2 }).map((t) => t.seq), [3]);
+  // a visit just ended (server called endVisit, dartsLeft back to 3): the board is empty
+  assert.deepEqual(currentVisitThrows(log(6), { dartsLeft: 3 }), []);
+  // a finished leg keeps its last darts on the board
+  assert.deepEqual(currentVisitThrows(log(5), { dartsLeft: 1, finished: true }).map((t) => t.seq), [3, 4]);
+  // a log with a gap in seq still counts from the top
+  assert.deepEqual(currentVisitThrows([{ seq: 7 }, { seq: 9 }], { dartsLeft: 2 }).map((t) => t.seq), [9]);
+}
+
+// --- what the session hands the game, rebuild vs ordinary poll -----------
+{
+  const rows = (n) => Array.from({ length: n }, (_, i) => ({ seq: i, seat: i < 3 ? 0 : 1, launch: { seed: i + 1 } }));
+  const mk = (seat) => {
+    const got = { state: [], thrown: [], order: [] };
+    const s = new OnlineSession({
+      onState: (x) => { got.state.push(x); got.order.push('state'); },
+      onThrow: (t, o) => { got.thrown.push([t.seq, t.seat, o?.replayAll === true]); got.order.push('throw'); },
+    });
+    s.seat = seat;
+    return { s, got };
+  };
+
+  // joining mid-visit: only the darts still in the board, both seats, planted
+  const join = mk(1);
+  join.s._absorb({ throws: rows(5), match: { current: 1, dartsLeft: 1 }, seats: [] }, { replayAll: true });
+  assert.deepEqual(join.got.thrown, [[3, 1, true], [4, 1, true]]);
+  assert.equal(join.got.state[0].replayAll, true);
+  assert.equal(join.s.lastSeq, 4);                  // still the whole log's high-water mark
+
+  // ...including our own darts, which an ordinary poll would skip
+  const mine = mk(0);
+  mine.s._absorb({ throws: rows(3), match: { current: 0, dartsLeft: 1 }, seats: [] }, { replayAll: true });
+  assert.deepEqual(mine.got.thrown.map((t) => t[0]), [1, 2]);
+
+  // an ordinary poll still hands over every new dart of theirs, to be flown
+  const poll = mk(0);
+  poll.s.lastSeq = 2;
+  poll.s._absorb({ throws: rows(6).slice(3), match: { current: 1, dartsLeft: 0 }, seats: [] });
+  assert.deepEqual(poll.got.thrown, [[3, 1, false], [4, 1, false], [5, 1, false]]);
+
+  // and never our own, which already flew locally
+  const echo = mk(1);
+  echo.s.lastSeq = 2;
+  echo.s._absorb({ throws: rows(6).slice(3), match: { current: 1, dartsLeft: 0 }, seats: [] });
+  assert.deepEqual(echo.got.thrown, []);
+  assert.equal(echo.s.lastSeq, 5);                  // consumed, just not replayed
+
+  // a new leg counts from seq 0 again: the old high-water mark must not eat it
+  const relegged = mk(0);
+  relegged.s.lastSeq = 9;
+  relegged.s._absorb({ throws: rows(2), match: { current: 0, dartsLeft: 1 }, seats: [] }, { replayAll: true });
+  assert.deepEqual(relegged.got.thrown.map((t) => t[0]), [0, 1]);
+
+  // A rebuild empties the board before it plants; an ordinary poll flies the
+  // dart before the turn change that takes the board away, or the last dart of
+  // a visit lands in a board the turn change has already emptied and stays.
+  assert.deepEqual(join.got.order, ['state', 'throw', 'throw']);
+  assert.deepEqual(poll.got.order, ['throw', 'throw', 'throw', 'state']);
+  assert.deepEqual(echo.got.order, ['state']);
+}
+
+console.log('livecheck ok — echo/poll dedupe, throttle, seat filtering, presence, rebuild subset');

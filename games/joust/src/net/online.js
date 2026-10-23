@@ -31,6 +31,8 @@ export class JoustSession {
     this.name = null;
     this.seats = [];
     this.match = null;
+    this.timing = null;         // the server's TIMING block: countdownMs, lagTicks, …
+    this.drunk = 0;             // last level we told the server about; heartbeats resend it
     this.open = null;           // {pass_no, seed, starts_at} while unresolved
     this.version = -1;
     this.lastPass = -1;         // highest resolved pass_no seen
@@ -38,6 +40,7 @@ export class JoustSession {
     this.active = false;
     this.pending = 0;           // traces posted but not acknowledged
     this.awaiting = false;      // our trace is in, theirs is not
+    this.readied = false;       // we are in the saddle, nothing armed yet
     this._armed = -1;           // pass_no already announced to the shell
     this._timer = null;
     this._beat = null;
@@ -48,15 +51,19 @@ export class JoustSession {
   /** Seconds until the charge starts; negative once it has. */
   get countdown() { return this.open ? this.clock.until(this.open.starts_at) : null; }
 
-  async join(spec, { newMatch = false } = {}) {
-    const r = await this._post('/api/joust/join', { spec, newMatch, drunk: 0 });
+  async join(spec, { newMatch = false, drunk = 0 } = {}) {
+    const r = await this._post('/api/joust/join', { spec, newMatch, drunk });
     if (!r?.ok) { this.onError(r?.error ?? 'join-failed'); return null; }
+    this.drunk = drunk;
+    this.readied = false;               // join clears the seat's ready flag server side
     this.seat = r.seat;
     this.name = r.name;
     this.connected = true;
     this.active = true;
     this._absorb(r, { replayAll: true });
     this._schedule();
+    // a rejoin (new match, opponent switched back) must not stack heartbeats
+    clearInterval(this._beat);
     this._beat = setInterval(() => this.heartbeat(), HEARTBEAT_MS);
     return r;
   }
@@ -69,9 +76,14 @@ export class JoustSession {
     this.connected = false;
   }
 
-  /** Say we are in the saddle. The pass arms when the other seat agrees. */
-  async ready() {
-    const r = await this._post('/api/joust/ready', {});
+  /**
+   * Say we are in the saddle, with the skinful we are carrying into the pass.
+   * The pass arms when the other seat agrees, and freezes both drunk levels.
+   */
+  async ready(drunk = this.drunk ?? 0) {
+    this.drunk = drunk;
+    this.readied = true;
+    const r = await this._post('/api/joust/ready', { drunk });
     if (!r?.ok) { this.onError(r?.error ?? 'ready-failed'); return null; }
     this._absorb(r);
     this._schedule();
@@ -82,7 +94,8 @@ export class JoustSession {
    * Post this seat's finished trace for a pass. The reply is authoritative:
    * either the resolved pass, or `waiting` on the other rider.
    */
-  async submitTrace(passNo, log, drunk = 0) {
+  async submitTrace(passNo, log, drunk = this.drunk ?? 0) {
+    this.drunk = drunk;
     this.pending++;
     const r = await this._post('/api/joust/trace', { pass_no: passNo, trace: log, drunk });
     this.pending--;
@@ -147,6 +160,7 @@ export class JoustSession {
     this._sync(r, rtt);
     this.seats = r.seats ?? this.seats;
     this.match = r.match ?? this.match;
+    this.timing = r.timing ?? this.timing;
     this.version = r.version ?? this.version;
     this.passes = r.passes ?? this.passes ?? [];
 
@@ -160,6 +174,7 @@ export class JoustSession {
     // `ready` replies carry the armed pass as `pass`; state/join carry `open`
     const open = r.open ?? r.pass ?? null;
     this.open = open && !open.result ? open : null;
+    if (this.open) this.readied = false;
     if (this.open && this.open.pass_no !== this._armed) {
       this._armed = this.open.pass_no;
       this.awaiting = false;
@@ -170,11 +185,16 @@ export class JoustSession {
     for (const p of fresh) this.onPassResolved(p, { replayAll });
   }
 
-  /** Poll hard while a pass is live or their trace is outstanding. */
+  /**
+   * Poll hard while a pass is live, their trace is outstanding, or we are in
+   * the saddle waiting for them: the seat that did NOT arm the pass hears
+   * about it on a poll, and it has to land well inside the countdown or it
+   * starts its ride late and rides the whole pass behind the other screen.
+   */
   _schedule() {
     if (!this.active) return;
     clearTimeout(this._timer);
-    const hot = this.open !== null || this.awaiting || this.pending > 0;
+    const hot = this.open !== null || this.awaiting || this.pending > 0 || this.readied;
     this._timer = setTimeout(() => this.poll(), hot ? ACTIVE_MS : IDLE_MS);
   }
 
